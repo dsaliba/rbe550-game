@@ -2,13 +2,21 @@ import * as React from "react";
 import { useReducer} from "react";
 import { ReactP5Wrapper } from "@p5-wrapper/react";
 import matrix from "./Matrix";
+import Select from 'react-select';
+import {Events, Stocks} from "./EventData"
 
 let grid;
 let freeTiles = [];
 
 let currentEvent = undefined;
 let forceUpdate = ()=>undefined;
-
+let events = [];
+let addressedEvents = [];
+let robots = [];
+let copBots = [];
+let fireBots = [];
+let emsBots = [];
+let mainBots = [];
 
 function sketch(p5) {
 
@@ -21,7 +29,7 @@ function sketch(p5) {
   let dragStart = null;
   let currentSelections = [];
   let imgSize = {w:1200, h:870};
-  let events = [];
+  
   let timer = 0;
 
   p5.preload = () => {
@@ -35,6 +43,10 @@ function sketch(p5) {
       });
     });
     
+    robots.push(new Robot('cop'));
+    robots.push(new Robot('fire'));
+    robots.push(new Robot('ems'));
+    robots.push(new Robot('main'));
     
     
   }
@@ -48,6 +60,227 @@ function sketch(p5) {
     console.log(grid);
     setTimeout(spawnRandomEvent, 2000);
   };
+
+  class Robot {
+    
+    constructor (type) {
+      this.type = type;
+      this.tile = getRandomBoringTile();
+      this.stock = [];
+
+
+      switch (this.type) {
+        case 'cop':
+          copBots.push(this);
+          Stocks.cop.forEach((item)=>{this.stock.push(item.value)});
+          break;
+          case 'fire':
+            fireBots.push(this);
+            Stocks.fire.forEach((item)=>{this.stock.push(item.value)});
+            break;
+            case 'ems':
+              emsBots.push(this);
+              Stocks.ems.forEach((item)=>{this.stock.push(item.value)});
+              break;
+              case 'main':
+                Stocks.main.forEach((item)=>{this.stock.push(item.value)});
+                mainBots.push(this)
+                break;
+      }
+    }
+
+    update() {
+      if (this.goal === undefined) {
+       
+      } else {
+        if (this.path === undefined) {
+          console.log(this.goal);
+          let target = {r: this.goal.event.r, c: this.goal.event.c};
+          let start = { r: this.tile.r, c: this.tile.c };
+          this.path = this.aStar(start, target);
+          if (this.path.length === 0) {
+            this.goal = undefined;
+          }
+          this.pathIndex = 0;
+
+        } else {
+          if (this.pathIndex < this.path.length-1) {
+            this.pathIndex = this.pathIndex + 1;
+            this.tile = this.path[this.pathIndex];
+          }else {
+            this.resolveConflict();
+            this.goal = undefined;
+            this.path = undefined;
+            this.pathIndex = undefined;
+          }
+          
+        }
+      }
+    }
+
+    resolveConflict() {
+      this.goal.event.requiredStock.forEach((item)=>{
+        if (this.stock.includes(item)) {
+          this.goal.providedStock.push(item);
+        }
+      });
+      console.log(this.goal.outstandingBots);
+      this.goal.outstandingBots--;
+      if (this.goal.outstandingBots < 1) {
+        if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
+          console.log(this.goal.event.requiredStock);
+          console.log(this.goal.providedStock);
+          alert("Resolved");
+        } else {
+          alert("Failed!")
+        }
+        let eventIndex = 0;
+        let addressedEventIndex = 0;
+        events.forEach((v, i)=>{if (v===this.goal.event){eventIndex = i; return;}})
+          addressedEvents.forEach((v, i)=>{if (v===this.goal){addressedEventIndex = i; return;}})
+        events.splice(eventIndex, 1);
+        addressedEvents.splice(addressedEventIndex, 1);
+      }
+      
+    }
+
+    aStar(start, goal) {
+      let openSet = new Set();
+      let cameFrom = new Map();
+      let gScore = new Map();
+      let fScore = new Map();
+  
+      openSet.add(this.hash(start));
+      gScore.set(this.hash(start), 0);
+      fScore.set(this.hash(start), this.heuristic(start, goal));
+      let counter = 0;
+      while (openSet.size > 0) {
+        counter ++;
+        if (counter > 1000) {
+          return[];
+        }
+       
+          let current = this.getLowestFScore(openSet, fScore);
+          console.log(current);
+  
+          if (current.r === goal.r && current.c === goal.c) {
+              return this.reconstructPath(cameFrom, goal, start);
+          }
+  
+          openSet.delete(this.hash(current));
+  
+          for (let neighbor of this.getNeighbors(current)) {
+            let currentG = gScore.get(this.hash(current));
+            
+              let tentativeGScore = ( currentG===undefined?Infinity:currentG) + 1;
+              
+              if (tentativeGScore < (gScore.get(this.hash(neighbor)) || Infinity)) {
+                  
+                  cameFrom.set(this.hash(neighbor), current);
+                  gScore.set(this.hash(neighbor), tentativeGScore);
+                  fScore.set(this.hash(neighbor), tentativeGScore + this.heuristic(neighbor, goal));
+  
+                  openSet.add(this.hash(neighbor));
+              }
+          }
+      }
+  
+      return []; // No path found
+  }
+  
+  // Get the node with the lowest fScore from openSet
+  getLowestFScore(openSet, fScore) {
+      let lowestNode = null;
+      let lowestScore = Infinity;
+  
+      for (let hash of openSet) {
+          let node = this.unhash(hash);
+          let score = fScore.get(hash) || Infinity;
+          if (score < lowestScore) {
+              lowestScore = score;
+              lowestNode = node;
+          }
+      }
+      return lowestNode;
+  }
+  
+  heuristic(a, b) {
+      return Math.abs(a.r - b.r) + Math.abs(a.c - b.c);
+  }
+  
+  getNeighbors(tile) {
+      let directions = [
+          { r: -1, c: 0 }, { r: 1, c: 0 }, 
+          { r: 0, c: -1 }, { r: 0, c: 1 }  
+      ];
+      
+      let neighbors = [];
+      for (let dir of directions) {
+          let nr = tile.r + dir.r;
+          let nc = tile.c + dir.c;
+          if (this.isWalkable(nr, nc)) {
+              neighbors.push({ r: nr, c: nc });
+          }
+      }
+      return neighbors;
+  }
+  
+  // Check if a tile is walkable
+  isWalkable(r, c) {
+      return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length && grid[r][c] === 0;
+  }
+  
+  // Reconstruct path from A* search
+  reconstructPath(cameFrom, goal, start) {
+      let path = [];
+      let current = goal;
+      let counter = 0;
+      console.log(start);
+      console.log(current);
+      while (cameFrom.has(this.hash(current)) && (!(current.r ===start.r && current.c===start.c))) {
+        counter ++;
+        if (counter > 10000){
+          return undefined;
+        }
+          path.unshift(current);
+          current = cameFrom.get(this.hash(current));
+      }
+      console.log(path);
+      return path;
+  }
+  
+  // Hash function to uniquely identify objects
+  hash(node) {
+      return `${node.r},${node.c}`;
+  }
+  
+  // Unhash function to get object back
+  unhash(hash) {
+      let [r, c] = hash.split(',').map(Number);
+      return { r, c };
+  }
+
+    draw() {
+      switch (this.type) {
+        case 'cop':
+          p5.fill(42, 195, 222);
+          break;
+          case 'fire':
+            p5.fill(247, 118, 142);
+            break;
+            case 'ems':
+              p5.fill(187, 154, 247);
+              break;
+              case 'main':
+                p5.fill(224, 175, 104);
+                break;
+      }
+      p5.stroke(0);
+      p5.strokeWeight(2);
+      p5.ellipseMode(p5.RADIUS);
+      p5.ellipse(this.tile.r*tileSize - p5.width/2 + tileSize/2, this.tile.c*tileSize - p5.height/2 + tileSize/2, tileSize, tileSize);
+    }
+  }
 
   function getRandomBoringTile() {
     let invalid = true;
@@ -67,62 +300,78 @@ function sketch(p5) {
 
 
   function spawnRandomEvent() {
-    let spawnTile = getRandomBoringTile();
-    switch(Math.floor(Math.random()*4)) {
-      case 0:
-        events.push({
-          color: [247, 118, 142],
-          flash: true,
-          r: spawnTile.r,
-          c: spawnTile.c,
-          title: "Misparked Car"
-
-        })
-      break;
-      case 1:
-        events.push({
-          color: [247, 118, 142],
-          flash: true,
-          r: spawnTile.r,
-          c: spawnTile.c,
-          title: "Faulty fusebox"
-        })
-      break;
-
-      case 2:
-        events.push({
-          color: [247, 118, 142],
-          flash: true,
-          r: spawnTile.r,
-          c: spawnTile.c,
-          title: "Cat stuck in tree"
-        })
-      break;
-
-      case 3:
-        events.push({
-          color: [247, 118, 142],
-          flash: true,
-          r: spawnTile.r,
-          c: spawnTile.c,
-          title: "Man passed out"
-        })
-      break;
+    if (events.length < 5) {
+      let spawnTile = getRandomBoringTile();
+      let event = Events[Math.floor(Math.random()*Events.length)];
+      events.push({
+        color: [247, 118, 142],
+        flash: true,
+        r: spawnTile.r,
+        c: spawnTile.c,
+        title: event.title,
+        description: event.description,
+        requiredStock: event.requiredStock,
+        suppliedStock: []
+      })
     }
-    console.log("event spawned");
     setTimeout(spawnRandomEvent, 10000 + Math.random()*5000);
   }
 
+  function dispatch() {
+    
+    addressedEvents.forEach((event)=> {
+      if (event.copNeeded) {
+        copBots.forEach((bot)=> {
+          if (bot.goal === undefined) {
+            bot.goal = event;
+            event.copNeeded = false;
+          }
+        })
+      }
+      if (event.fireNeeded) {
+        fireBots.forEach((bot)=> {
+          if (bot.goal === undefined) {
+            bot.goal = event;
+            event.fireNeeded = false;
+          }
+        })
+      }
+      if (event.emsNeeded) {
+        emsBots.forEach((bot)=> {
+          if (bot.goal === undefined) {
+            bot.goal = event;
+            event.emsNeeded = false;
+          }
+        })
+      }
+      if (event.maintanceNeeded) {
+        mainBots.forEach((bot)=> {
+          if (bot.goal === undefined) {
+            bot.goal = event;
+            event.maintanceNeeded = false;
+          }
+        })
+      }
+    })
+  }
 
   p5.draw = () => {
-    
+    dispatch();
     timer ++;
+    if (timer % 20 === 0 ) {
+      robots.forEach((robot)=> {
+        robot.update();
+      })
+    }
     
-
     p5.background(250);
     if (img) {
       p5.image(img, -p5.width/2, -p5.height/2, imgSize.w, imgSize.h);
     }
+    p5.rectMode(p5.CORNERS);
+    p5.strokeWeight(0);
+    p5.fill(0, 0, 0, 150);
+    p5.rect(-p5.width, -p5.height, p5.width, p5.height);
 
     let x1
     let x2
@@ -155,10 +404,13 @@ function sketch(p5) {
         p5.strokeWeight(3);
       }
       
-      p5.ellipseMode(p5.RADIUS);
-      p5.ellipse(event.r*tileSize - p5.width/2 + tileSize/2, event.c*tileSize - p5.height/2 + tileSize/2, tileSize, tileSize);
+      p5.rectMode(p5.RADIUS);
+      p5.rect(event.r*tileSize - p5.width/2 + tileSize/2, event.c*tileSize - p5.height/2 + tileSize/2, tileSize, tileSize);
     })
 
+    robots.forEach((robot)=> {
+      robot.draw();
+    })
 
 
 
@@ -229,7 +481,14 @@ function printMatrixAsDeclaration(matrix) {
 
 export default function App() {
   const [, forceUpdateLocal] = useReducer(x => x + 1, 0);
+  const [copStock, setCopStock] = React.useState([]);
+  const [fireStock, setFireStock] = React.useState([]);
+  const [emsStock, setEmsStock] = React.useState([]);
+  const [maintanceStock, setMaintanceStock] = React.useState([]);
   forceUpdate = forceUpdateLocal;
+
+
+
 
   return <div className="outer-box">
     <div className="game-box">
@@ -242,10 +501,69 @@ export default function App() {
               <h1 className="event-title">{currentEvent.title}</h1>
               <div className="event-description">{currentEvent.description}</div>
               <div className="event-button-box">
-                <button className="cop-button">Send Police</button>
-                <button className="fire-button">Send Firefighters</button>
-                <button className="ems-button">Send EMS</button>
-                <button className="main-button">Send Maintance</button>
+                <div className="cop-options" >
+                  <h1 className="cop-title">Police Items</h1>
+                  <Select options={Stocks.cop} className="selector" isMulti onChange={(values)=> {
+                console.log(values);
+                setCopStock(values);
+              }}/>
+                </div>
+
+                <div className="fire-options">
+                  <h1 className="fire-title">Firefighter Items</h1>
+                  <Select options={Stocks.fire} className="selector" isMulti onChange={(values)=> {
+                console.log(values);
+                setFireStock(values);
+              }}/>
+                </div>
+
+                <div className="ems-options">
+                  <h1 className="ems-title">EMS Items</h1>
+                  <Select options={Stocks.ems} className="selector" isMulti onChange={(values)=> {
+                console.log(values);
+                setEmsStock(values);
+              }}/>
+                </div>
+
+                <div className="main-options">
+                  <h1 className="main-title">Maintance Items</h1>
+                  <Select options={Stocks.main} className="selector" isMulti onChange={(values)=> {
+                console.log(values);
+                setMaintanceStock(values);
+              }}/>
+                </div>
+
+
+              <button className="submit-button" onClick={()=> {
+                currentEvent.color = [158, 206, 106]
+                
+                let requested = [];
+                copStock.forEach((item)=>{requested.push(item.value)});
+                fireStock.forEach((item)=>{requested.push(item.value)});
+                emsStock.forEach((item)=>{requested.push(item.value)});
+                maintanceStock.forEach((item)=>{requested.push(item.value)});
+                addressedEvents.push({
+                  event: currentEvent,
+                  requestedStock: requested,
+                  copNeeded: copStock.length>0,
+                  fireNeeded: fireStock.length>0,
+                  emsNeeded: emsStock.length>0,
+                  maintanceNeeded: maintanceStock.length>0,
+                  providedStock: [],
+                  outstandingBots: (copStock.length>0?1:0) + (fireStock.length>0?1:0) + (emsStock.length>0?1:0) +  (maintanceStock.length>0?1:0)
+                })
+                forceUpdate();
+                currentEvent = undefined;
+                setCopStock([]);
+                setEmsStock([]);
+                setFireStock([]);
+                setMaintanceStock([]);
+              }}>
+                <h1>Submit</h1>
+              </button>
+              
+              
+              
               </div>
             </div>
         }))()}

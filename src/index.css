@@ -51,6 +51,7 @@ html, body, #app, #root,  #app>div {
 .side-panel {
   background-color: #414868;
   width: 100%;
+  color: #efe9e2;
 }
 
 .event {
@@ -63,54 +64,73 @@ html, body, #app, #root,  #app>div {
 
 .event-button-box {
   display: flex;
-
   flex-direction: column;
-  row-gap: 20px;
+  row-gap: 5px;
+  width: 80%;
 }
 
-.cop-button {
-  background-color: #2ac3de; /* Green */
-  border: none;
-  color: white;
-  padding: 15px 32px;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-  font-size: 16px;
-  cursor:pointer;
+
+
+.cop-options {
+  justify-content: center;
+  border-color: #2ac3de;
+  border-width: 4px;
+  border-style: solid;
+  width: 80%;
+  padding-left: 10%;
+  padding-right: 10%;
+  padding-bottom: 4%;
 }
 
-.fire-button {
-  background-color: #f7768e; /* Green */
-  border: none;
-  color: white;
-  padding: 15px 32px;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-  font-size: 16px;
-  cursor:pointer;
+.fire-options {
+  justify-content: center;
+  border-color: #f7768e;
+  border-width: 4px;
+  border-style: solid;
+  width: 80%;
+  padding-left: 10%;
+  padding-right: 10%;
+  padding-bottom: 4%;
 }
 
-.ems-button {
-  background-color: #bb9af7; /* Green */
-  border: none;
-  color: white;
-  padding: 15px 32px;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-  font-size: 16px;
-  cursor:pointer;
+.ems-options {
+  justify-content: center;
+  border-color: #bb9af7;
+  border-width: 4px;
+  border-style: solid;
+  width: 80%;
+  padding-left: 10%;
+  padding-right: 10%;
+  padding-bottom: 4%;
 }
-.main-button {
-  background-color: #e0af68; /* Green */
+
+.main-options {
+  justify-content: center;
+  border-color: #e0af68;
+  border-width: 4px;
+  border-style: solid;
+  width: 80%;
+  padding-left: 10%;
+  padding-right: 10%;
+  padding-bottom: 4%;
+}
+
+.submit-button {
+  background-color: #9ece6a; /* Green */
   border: none;
-  color: white;
-  padding: 15px 32px;
+  color: #1a1b26;
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 16px;
   cursor:pointer;
+  
+}
+
+.event-description {
+  height: 10%;
+  width: 80%;
+}
+
+.selector {
+  color: #1a1b26;
 }
