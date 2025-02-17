@@ -134,3 +134,10 @@ html, body, #app, #root,  #app>div {
 .selector {
   color: #1a1b26;
 }
+
+.event-image {
+  width: 100%; /* Adjust size as needed */
+  max-width: 100px;
+  height: auto;
+  margin: 10px 0;
+}

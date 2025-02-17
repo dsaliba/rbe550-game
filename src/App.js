@@ -21,6 +21,7 @@ let mainBots = [];
 function sketch(p5) {
 
   let img; 
+  let eventImage
   const tileSize = 10;
   let rows;
   let cols;
@@ -303,6 +304,7 @@ function sketch(p5) {
     if (events.length < 5) {
       let spawnTile = getRandomBoringTile();
       let event = Events[Math.floor(Math.random()*Events.length)];
+      //copies all the needed infromation from the event, stock and general classes
       events.push({
         color: [247, 118, 142],
         flash: true,
@@ -311,7 +313,8 @@ function sketch(p5) {
         title: event.title,
         description: event.description,
         requiredStock: event.requiredStock,
-        suppliedStock: []
+        suppliedStock: [],
+        image: event.image  
       })
     }
     setTimeout(spawnRandomEvent, 10000 + Math.random()*5000);
@@ -368,6 +371,8 @@ function sketch(p5) {
     if (img) {
       p5.image(img, -p5.width/2, -p5.height/2, imgSize.w, imgSize.h);
     }
+    if (eventImage)
+    
     p5.rectMode(p5.CORNERS);
     p5.strokeWeight(0);
     p5.fill(0, 0, 0, 150);
@@ -427,6 +432,11 @@ function sketch(p5) {
       let ey = event.c*tileSize + tileSize/2;
       if (((ex-x)*(ex-x))+((ey-y)*(ey-y)) < tileSize*tileSize) {
         currentEvent = event;
+        eventImage = currentEvent.image
+        console.log("path to image:", eventImage)
+        events.forEach((event) => {
+
+        });
         event.flash = false;
         forceUpdate();
 
@@ -497,8 +507,17 @@ export default function App() {
       </div>
       <div className="side-panel">
         {currentEvent===undefined?"":((()=>{
+          console.log("current event", currentEvent.image);
           return <div className="event">
               <h1 className="event-title">{currentEvent.title}</h1>
+              {currentEvent.image && (
+                <img 
+                    src={currentEvent.image} 
+                    alt={currentEvent.title}
+                    className="event-image"
+
+                />
+            )}
               <div className="event-description">{currentEvent.description}</div>
               <div className="event-button-box">
                 <div className="cop-options" >
