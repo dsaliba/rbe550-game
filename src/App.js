@@ -17,7 +17,12 @@ let copBots = [];
 let fireBots = [];
 let emsBots = [];
 let mainBots = [];
-
+const warehouse_location = {
+  cop: { r: 4, c: 11 },
+  fire: { r: 4, c: 11 },
+  ems: { r: 4, c: 11 }, 
+  main: { r: 4, c: 11 }
+};
 function sketch(p5) {
 
   let img; 
@@ -68,43 +73,97 @@ function sketch(p5) {
       this.type = type;
       this.tile = getRandomBoringTile();
       this.stock = [];
+      this.requested_item = null //Requested item for a dispatch must be cleared after the goal is started
+      this.intermediateTargetReached = false
 
 
       switch (this.type) {
         case 'cop':
           copBots.push(this);
-          Stocks.cop.forEach((item)=>{this.stock.push(item.value)});
+          // Stocks.cop.forEach((item)=>{this.stock.push(item.value)});
           break;
           case 'fire':
             fireBots.push(this);
-            Stocks.fire.forEach((item)=>{this.stock.push(item.value)});
+            // Stocks.fire.forEach((item)=>{this.stock.push(item.value)});
             break;
             case 'ems':
               emsBots.push(this);
-              Stocks.ems.forEach((item)=>{this.stock.push(item.value)});
+              // Stocks.ems.forEach((item)=>{this.stock.push(item.value)});
               break;
               case 'main':
-                Stocks.main.forEach((item)=>{this.stock.push(item.value)});
+                // Stocks.main.forEach((item)=>{this.stock.push(item.value)});
                 mainBots.push(this)
                 break;
       }
     }
 
-    update() {
+    update() { 
       if (this.goal === undefined) {
-       
-      } else {
-        if (this.path === undefined) {
-          console.log(this.goal);
-          let target = {r: this.goal.event.r, c: this.goal.event.c};
-          let start = { r: this.tile.r, c: this.tile.c };
-          this.path = this.aStar(start, target);
-          if (this.path.length === 0) {
-            this.goal = undefined;
+       //if there is no goal 
+      } 
+      else {
+        // console.log("stock status and target status " + this.has_stock(this.requested_item) + " " + this.intermediateTargetReached + (this.path ? " " + this.path.length : ""));
+        
+        if (!this.has_stock(this.requested_item) && !this.intermediateTargetReached) {
+          // Need to go to warehouse first
+          // console.log("Passed check1");
+          // console.log("Type " + this.type);
+          
+          if (this.path === undefined) {
+            this.target = warehouse_location[this.type];
+            console.log(`Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`);      
+            if (!this.isWalkable(this.target.r, this.target.c)) {
+              console.error(`Warehouse location (${this.target.r}, ${this.target.c}) is not walkable!`);
+              alert(`Invalid warehouse location for ${this.type}! Please update warehouse coordinates.`);
+              this.intermediateTargetReached = true; // Skip warehouse step for now
+              return;
+            }
+            this.path = this.aStar(this.tile, this.target);
+            console.log("Path is " + this.path);
+            this.pathIndex = 0;
           }
-          this.pathIndex = 0;
+          
+          // Move along the path
+          if (this.path.length > 0 && this.pathIndex < this.path.length) {
+            this.pathIndex = this.pathIndex + 1;
+            this.tile = this.path[this.pathIndex];
+            
+            // Check if we've reached the warehouse
+            if (this.pathIndex >= this.path.length - 1) {
+              console.log("Reached warehouse");
+              this.stock.push(this.requested_item);
+              this.requested_item = null;
+              this.path = undefined;
+              this.pathIndex = undefined;
+              this.intermediateTargetReached = true;
+              // console.log("Passed check2");
+            }
+          } else {
+            
+            console.log("No path needed to warehouse - already there");
+            this.stock.push(this.requested_item);
+            this.requested_item = null;
+            this.path = undefined;
+            this.pathIndex = undefined;
+            this.intermediateTargetReached = true;
+            // console.log("Passed check2");
+          }
+        }
+        else{
+          if (this.path === undefined) {
+            // console.log(this.goal);
+            let target = {r: this.goal.event.r, c: this.goal.event.c};
+            let start = { r: this.tile.r, c: this.tile.c };
+            this.path = this.aStar(start, target);
+            if (this.path.length === 0) {
+              this.goal = undefined;
+            }
+            this.pathIndex = 0;
+        }
+        
 
-        } else {
+         else 
+         {
           if (this.pathIndex < this.path.length-1) {
             this.pathIndex = this.pathIndex + 1;
             this.tile = this.path[this.pathIndex];
@@ -118,19 +177,24 @@ function sketch(p5) {
         }
       }
     }
-
+  }
+    has_stock(desired) {
+      // console.log("stock currently " + this.stock)
+      // console.log("Do we have what we need " + this.stock.includes(desired))
+      return this.stock.includes(desired);
+    }
     resolveConflict() {
       this.goal.event.requiredStock.forEach((item)=>{
         if (this.stock.includes(item)) {
           this.goal.providedStock.push(item);
         }
       });
-      console.log(this.goal.outstandingBots);
+      // console.log(this.goal.outstandingBots);
       this.goal.outstandingBots--;
       if (this.goal.outstandingBots < 1) {
         if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
-          console.log(this.goal.event.requiredStock);
-          console.log(this.goal.providedStock);
+          // console.log(this.goal.event.requiredStock);
+          // console.log(this.goal.providedStock);
           alert("Resolved");
         } else {
           alert("Failed!")
@@ -146,6 +210,7 @@ function sketch(p5) {
     }
 
     aStar(start, goal) {
+      console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
       let openSet = new Set();
       let cameFrom = new Map();
       let gScore = new Map();
@@ -162,9 +227,11 @@ function sketch(p5) {
         }
        
           let current = this.getLowestFScore(openSet, fScore);
-          console.log(current);
+          // console.log(current);
   
           if (current.r === goal.r && current.c === goal.c) {
+            console.log("We found a path for "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
+            console.log("Path found is " + this.reconstructPath(cameFrom, goal, start))
               return this.reconstructPath(cameFrom, goal, start);
           }
   
@@ -185,7 +252,7 @@ function sketch(p5) {
               }
           }
       }
-  
+      console.log("no path")
       return []; // No path found
   }
   
@@ -236,8 +303,8 @@ function sketch(p5) {
       let path = [];
       let current = goal;
       let counter = 0;
-      console.log(start);
-      console.log(current);
+      // console.log(start);
+      // console.log(current);
       while (cameFrom.has(this.hash(current)) && (!(current.r ===start.r && current.c===start.c))) {
         counter ++;
         if (counter > 10000){
@@ -246,7 +313,7 @@ function sketch(p5) {
           path.unshift(current);
           current = cameFrom.get(this.hash(current));
       }
-      console.log(path);
+      // console.log(path);
       return path;
   }
   
@@ -321,41 +388,62 @@ function sketch(p5) {
   }
 
   function dispatch() {
-    
-    addressedEvents.forEach((event)=> {
-      if (event.copNeeded) {
-        copBots.forEach((bot)=> {
-          if (bot.goal === undefined) {
-            bot.goal = event;
-            event.copNeeded = false;
-          }
-        })
-      }
-      if (event.fireNeeded) {
-        fireBots.forEach((bot)=> {
-          if (bot.goal === undefined) {
-            bot.goal = event;
-            event.fireNeeded = false;
-          }
-        })
-      }
-      if (event.emsNeeded) {
-        emsBots.forEach((bot)=> {
-          if (bot.goal === undefined) {
-            bot.goal = event;
-            event.emsNeeded = false;
-          }
-        })
-      }
-      if (event.maintanceNeeded) {
-        mainBots.forEach((bot)=> {
-          if (bot.goal === undefined) {
-            bot.goal = event;
-            event.maintanceNeeded = false;
-          }
-        })
-      }
-    })
+    const needs = {
+      copNeeded: copBots,
+      fireNeeded: fireBots,
+      emsNeeded: emsBots, 
+      maintanceNeeded: mainBots
+    };
+    addressedEvents.forEach((currentEvent)=> {
+      Object.keys(needs).forEach((need) => {
+        if (currentEvent[need]) {  
+          needs[need].forEach((bot) => {
+            if (bot.goal === undefined) {
+              bot.goal = currentEvent;  
+              // bot.requested_item = addressedEvents.requestedStock
+              bot.requested_item = currentEvent.requestedStock;
+              console.log("Requested Item " + bot.requested_item)
+              currentEvent[need] = false; 
+            }
+          });
+        }
+      });
+    });
+    // 
+    //   if (event.copNeeded) {
+    //     copBots.forEach((bot)=> {
+    //       if (bot.goal === undefined) {
+    //         bot.goal = event;
+
+    //         event.copNeeded = false;
+    //       }
+    //     })
+    //   }
+    //   if (event.fireNeeded) {
+    //     fireBots.forEach((bot)=> {
+    //       if (bot.goal === undefined) {
+    //         bot.goal = event;
+    //         event.fireNeeded = false;
+    //       }
+    //     })
+    //   }
+    //   if (event.emsNeeded) {
+    //     emsBots.forEach((bot)=> {
+    //       if (bot.goal === undefined) {
+    //         bot.goal = event;
+    //         event.emsNeeded = false;
+    //       }
+    //     })
+    //   }
+    //   if (event.maintanceNeeded) {
+    //     mainBots.forEach((bot)=> {
+    //       if (bot.goal === undefined) {
+    //         bot.goal = event;
+    //         event.maintanceNeeded = false;
+    //       }
+    //     })
+    //   }
+    // })
   }
 
   p5.draw = () => {
@@ -424,7 +512,7 @@ function sketch(p5) {
   };
 
   p5.mouseClicked = () => {
-    console.log('Mouse clicked at:', p5.mouseX, p5.mouseY);
+    // console.log('Mouse clicked at:', p5.mouseX, p5.mouseY);
     let x = p5.mouseX ;
     let y = p5.mouseY;
     events.forEach((event)=> {
@@ -433,7 +521,7 @@ function sketch(p5) {
       if (((ex-x)*(ex-x))+((ey-y)*(ey-y)) < tileSize*tileSize) {
         currentEvent = event;
         eventImage = currentEvent.image
-        console.log("path to image:", eventImage)
+        // console.log("path to image:", eventImage)
         events.forEach((event) => {
 
         });
@@ -486,7 +574,7 @@ function printMatrixAsDeclaration(matrix) {
   }
 
   output += "\n];";
-  console.log(output);
+  // console.log(output);
 }
 
 export default function App() {
@@ -507,7 +595,7 @@ export default function App() {
       </div>
       <div className="side-panel">
         {currentEvent===undefined?"":((()=>{
-          console.log("current event", currentEvent.image);
+          // console.log("current event", currentEvent.image);
           return <div className="event">
               <h1 className="event-title">{currentEvent.title}</h1>
               {currentEvent.image && (
@@ -523,7 +611,7 @@ export default function App() {
                 <div className="cop-options" >
                   <h1 className="cop-title">Police Items</h1>
                   <Select options={Stocks.cop} className="selector" isMulti onChange={(values)=> {
-                console.log(values);
+                // console.log(values);
                 setCopStock(values);
               }}/>
                 </div>
@@ -531,7 +619,7 @@ export default function App() {
                 <div className="fire-options">
                   <h1 className="fire-title">Firefighter Items</h1>
                   <Select options={Stocks.fire} className="selector" isMulti onChange={(values)=> {
-                console.log(values);
+                // console.log(values);
                 setFireStock(values);
               }}/>
                 </div>
@@ -539,7 +627,7 @@ export default function App() {
                 <div className="ems-options">
                   <h1 className="ems-title">EMS Items</h1>
                   <Select options={Stocks.ems} className="selector" isMulti onChange={(values)=> {
-                console.log(values);
+                // console.log(values);
                 setEmsStock(values);
               }}/>
                 </div>
@@ -547,7 +635,7 @@ export default function App() {
                 <div className="main-options">
                   <h1 className="main-title">Maintance Items</h1>
                   <Select options={Stocks.main} className="selector" isMulti onChange={(values)=> {
-                console.log(values);
+                // console.log(values);
                 setMaintanceStock(values);
               }}/>
                 </div>
