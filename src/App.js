@@ -17,13 +17,53 @@ let copBots = [];
 let fireBots = [];
 let emsBots = [];
 let mainBots = [];
-const warehouse_location = {
-  cop: { r: 4, c: 11 },
-  fire: { r: 4, c: 11 },
-  ems: { r: 4, c: 11 }, 
-  main: { r: 4, c: 11 }
-};
+let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
+
+
+function reservePath(bot, path, startTime) {
+  path.forEach((tile, i) => {
+    const time = startTime + i;
+    const key = `${tile.r},${tile.c},${time}`;
+    reservationTable.set(key, { bot, priority: bot.goal.event.priority });
+  });
+}
+function isPathFree(path, startTime, priority) {
+  return path.every((tile, i) => {
+    const time = startTime + i;
+    const key = `${tile.r},${tile.c},${time}`;
+    const reservation = reservationTable.get(key);
+    return !reservation || reservation.priority >= priority;
+  });
+}
+
+function planAndReservePath(bot, start, goal) {
+  const path = bot.aStar(start, goal);
+
+  if (!path || path.length === 0) {
+    console.log(`[${bot.type}] No path found from (${start.r},${start.c}) to (${goal.r},${goal.c})`);
+    return null;
+  }
+
+  const priority = bot.goal?.event?.priority ?? 99;
+  const startTime = bot.pathIndex || 0;
+
+  if (!isPathFree(path, startTime, priority)) {
+    console.log(`[${bot.type}] Path blocked by higher-priority reservation`);
+    return null;
+  }
+
+  reservePath(bot, path, startTime);
+  console.log(`[${bot.type}] Reserved path of length ${path.length} at priority ${priority}`);
+  return path;
+}
+
 function sketch(p5) {
+  let warehouse_location = {
+    cop: { r: 4, c: 11 },
+    fire: { r: 4, c: 11 },
+    ems: { r: 4, c: 11 }, 
+    main: { r: 4, c: 11 }
+  };
 
   let img; 
   let eventImage
@@ -52,8 +92,10 @@ function sketch(p5) {
     robots.push(new Robot('cop'));
     robots.push(new Robot('fire'));
     robots.push(new Robot('ems'));
-    robots.push(new Robot('main'));
-    
+    warehouse_location.cop = getRandomBoringTile()
+    warehouse_location.ems = getRandomBoringTile()
+    warehouse_location.fire = getRandomBoringTile()
+    warehouse_location.main = getRandomBoringTile()
     
   }
   p5.setup = () => {
@@ -115,12 +157,19 @@ function sketch(p5) {
             if (!this.isWalkable(this.target.r, this.target.c)) {
               console.error(`Warehouse location (${this.target.r}, ${this.target.c}) is not walkable!`);
               alert(`Invalid warehouse location for ${this.type}! Please update warehouse coordinates.`);
-              this.intermediateTargetReached = true; // Skip warehouse step for now
+              this.intermediateTargetReached = true; 
               return;
             }
-            this.path = this.aStar(this.tile, this.target);
-            console.log("Path is " + this.path);
-            this.pathIndex = 0;
+            let target = this.target;
+            let start = { r: this.tile.r, c: this.tile.c };
+            const path = planAndReservePath(this, start, target);
+            if (path) {
+              this.path = path;
+              this.pathIndex = 0;
+            } else {
+              // retry next frame
+              return;
+            }
           }
           
           // Move along the path
@@ -154,11 +203,15 @@ function sketch(p5) {
             // console.log(this.goal);
             let target = {r: this.goal.event.r, c: this.goal.event.c};
             let start = { r: this.tile.r, c: this.tile.c };
-            this.path = this.aStar(start, target);
-            if (this.path.length === 0) {
-              this.goal = undefined;
+
+            const path = planAndReservePath(this, start, target);
+            if (path) {
+              this.path = path;
+              this.pathIndex = 0;
+            } else {
+              // retry next frame
+              return;
             }
-            this.pathIndex = 0;
         }
         
 
@@ -198,6 +251,8 @@ function sketch(p5) {
           alert("Resolved");
         } else {
           alert("Failed!")
+          console.log("Required:", this.goal.event.requiredStock);
+          console.log("Provided:", this.goal.providedStock);
         }
         let eventIndex = 0;
         let addressedEventIndex = 0;
@@ -208,7 +263,7 @@ function sketch(p5) {
       }
       
     }
-
+    
     aStar(start, goal) {
       console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
       let openSet = new Set();
@@ -329,20 +384,33 @@ function sketch(p5) {
   }
 
     draw() {
+      const isActive = this.goal !== undefined;
+      const isFlashing = isActive && timer % 30 < 15;
+      let baseColor;
       switch (this.type) {
         case 'cop':
-          p5.fill(42, 195, 222);
+          baseColor = [42, 195, 222];
           break;
-          case 'fire':
-            p5.fill(247, 118, 142);
-            break;
-            case 'ems':
-              p5.fill(187, 154, 247);
-              break;
-              case 'main':
-                p5.fill(224, 175, 104);
-                break;
+        case 'fire':
+          baseColor = [247, 118, 142];
+          break;
+        case 'ems':
+          baseColor = [187, 154, 247];
+          break;
+        case 'main':
+          baseColor = [224, 175, 104];
+          break;
+        default:
+          baseColor = [200, 200, 200];
       }
+    
+      // Flash between red and base color if dispatched
+      if (isFlashing) {
+        p5.fill(255, 0, 0); // red
+      } else {
+        p5.fill(...baseColor);
+      }
+    
       p5.stroke(0);
       p5.strokeWeight(2);
       p5.ellipseMode(p5.RADIUS);
@@ -394,11 +462,15 @@ function sketch(p5) {
       emsNeeded: emsBots, 
       maintanceNeeded: mainBots
     };
+    addressedEvents.sort((a, b) => a.event.priority - b.event.priority);
+
     addressedEvents.forEach((currentEvent)=> {
       Object.keys(needs).forEach((need) => {
         if (currentEvent[need]) {  
           needs[need].forEach((bot) => {
             if (bot.goal === undefined) {
+              if (currentEvent.outstandingBots <= 0) return; //returns if we have no available bots
+
               bot.goal = currentEvent;  
               // bot.requested_item = addressedEvents.requestedStock
               bot.requested_item = currentEvent.requestedStock;
@@ -409,41 +481,7 @@ function sketch(p5) {
         }
       });
     });
-    // 
-    //   if (event.copNeeded) {
-    //     copBots.forEach((bot)=> {
-    //       if (bot.goal === undefined) {
-    //         bot.goal = event;
 
-    //         event.copNeeded = false;
-    //       }
-    //     })
-    //   }
-    //   if (event.fireNeeded) {
-    //     fireBots.forEach((bot)=> {
-    //       if (bot.goal === undefined) {
-    //         bot.goal = event;
-    //         event.fireNeeded = false;
-    //       }
-    //     })
-    //   }
-    //   if (event.emsNeeded) {
-    //     emsBots.forEach((bot)=> {
-    //       if (bot.goal === undefined) {
-    //         bot.goal = event;
-    //         event.emsNeeded = false;
-    //       }
-    //     })
-    //   }
-    //   if (event.maintanceNeeded) {
-    //     mainBots.forEach((bot)=> {
-    //       if (bot.goal === undefined) {
-    //         bot.goal = event;
-    //         event.maintanceNeeded = false;
-    //       }
-    //     })
-    //   }
-    // })
   }
 
   p5.draw = () => {
