@@ -18,7 +18,129 @@ let fireBots = [];
 let emsBots = [];
 let mainBots = [];
 let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
+let roads = [];
 
+
+function getRandomVibrantColor() {
+  const goldenRatioConjugate = 0.618033988749895;
+  let hue = Math.random();
+
+  hue += goldenRatioConjugate;
+  hue %= 1;
+
+  const rgb = hsvToRgb(hue, 0.9, 0.9);
+  return rgb;
+}
+
+function hsvToRgb(h, s, v) {
+  let r, g, b;
+
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+
+  return {
+    r: Math.round(r * 255),
+    g: Math.round(g * 255),
+    b: Math.round(b * 255)
+  };
+}
+
+
+function generateRoads() {
+ 
+  console.log(freeTiles);
+  let mask = [];
+  freeTiles.forEach((tile)=>{
+    mask.push(true);
+  })
+  let used = []
+  freeTiles.forEach((tile, index) => {
+    if (mask[index] && tile.r > 0 && tile.c > 0 && tile.r < grid.length-1 && tile.c < grid[0].length-1) {
+      if (grid[tile.r-1][tile.c] === 0 && grid[tile.r+1][tile.c] ==0) {  //Horizontal road
+        let rMin = undefined;
+        let rMax = undefined;
+        let i = 1;
+        while (rMin === undefined || rMax==undefined) {
+          if (rMin === undefined) {
+            if (tile.r-i < 0 || grid[tile.r-i][tile.c] === 1) {
+              rMin = tile.r-i+1;
+            }
+          }else {
+            if (tile.r+i >= grid.length || grid[tile.r+i][tile.c] === 1) {
+              rMax = tile.r+i-1;
+            }
+          }
+          i++;
+        }
+        let tiles = []
+        for (i = rMin; i <= rMax; i++) {
+          tiles.push({r: i, c: tile.c})
+          grid[i][tile.c]= 1;
+        }
+        freeTiles.forEach((created, index)=>{
+          tiles.forEach((value)=> {
+            
+            if (created.r === value.r && created.c === value.c) {
+              mask[index] = false;
+            }
+            return
+          })
+        })
+        roads.push({tiles:tiles, color: getRandomVibrantColor()})
+      } else if (grid[tile.r][tile.c-1] == 0 && grid[tile.r][tile.c+1] === 0) {  //Vertical road
+        let cMin = undefined;
+        let cMax = undefined;
+        let i = 1;
+        while (cMin === undefined || cMax==undefined) {
+          if (cMin === undefined) {
+            if (tile.c-i < 0 || grid[tile.r][tile.c-i] === 1) {
+              cMin = tile.c-i+1;
+            }
+          }else {
+            if (tile.c+i >= grid[0].length || grid[tile.r][tile.c+i] === 1) {
+              cMax = tile.c+i-1;
+            }
+          }
+          i++;
+        }
+        let tiles = []
+        for (i = cMin; i <= cMax; i++) {
+          tiles.push({r: tile.r, c: i})
+          grid[tile.r][i]= 1;
+        }
+        freeTiles.forEach((created, index)=>{
+          tiles.forEach((value)=> {
+            if (created.r === value.r && created.c === value.c) {
+              mask[index] = false;
+            }
+            return
+          })
+        })
+        roads.push({tiles:tiles, color: getRandomVibrantColor()})
+      }else {
+        console.log("Malformed road tile");
+      }
+     
+    }
+  });
+  console.log(roads)
+  freeTiles.forEach((tile)=> {
+    grid[tile.r][tile.c] = 0
+  })
+  
+}
 
 function reservePath(bot, path, startTime) {
   path.forEach((tile, i) => {
@@ -96,7 +218,7 @@ function sketch(p5) {
     warehouse_location.ems = getRandomBoringTile()
     warehouse_location.fire = getRandomBoringTile()
     warehouse_location.main = getRandomBoringTile()
-    
+    generateRoads();
   }
   p5.setup = () => {
     p5.createCanvas(imgSize.w  , imgSize.h, p5.WEBGL)
@@ -384,6 +506,7 @@ function sketch(p5) {
   }
 
     draw() {
+      
       const isActive = this.goal !== undefined;
       const isFlashing = isActive && timer % 30 < 15;
       let baseColor;
@@ -406,7 +529,7 @@ function sketch(p5) {
     
       // Flash between red and base color if dispatched
       if (isFlashing) {
-        p5.fill(255, 0, 0); // red
+        p5.fill(255, 255, 255); // red
       } else {
         p5.fill(...baseColor);
       }
@@ -417,6 +540,8 @@ function sketch(p5) {
       p5.ellipse(this.tile.r*tileSize - p5.width/2 + tileSize/2, this.tile.c*tileSize - p5.height/2 + tileSize/2, tileSize, tileSize);
     }
   }
+
+  
 
   function getRandomBoringTile() {
     let invalid = true;
@@ -524,6 +649,16 @@ function sketch(p5) {
       
       });
     });
+
+   
+      p5.strokeWeight(2);
+      roads.forEach((road)=> {
+        console.log(road.color);
+        p5.stroke(road.color.r, road.color.g, road.color.b);
+        let start = road.tiles[0];
+        let end = road.tiles[road.tiles.length-1];
+        p5.line(start.r*tileSize + tileSize/2 - p5.width/2, start.c*tileSize + tileSize/2 - p5.height/2, end.r*tileSize + tileSize/2 - p5.width/2, end.c*tileSize + tileSize/2 - p5.height/2)
+      });
 
     events.forEach((event)=> {
       p5.fill(event.color[0], event.color[1], event.color[2]);
