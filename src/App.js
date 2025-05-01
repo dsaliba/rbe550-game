@@ -17,10 +17,9 @@ let copBots = [];
 let fireBots = [];
 let emsBots = [];
 let mainBots = [];
-let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
+// let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
 let roads = [];
 let roadsByGrid;
-
 
 function getRandomVibrantColor() {
   const goldenRatioConjugate = 0.618033988749895;
@@ -59,6 +58,27 @@ function hsvToRgb(h, s, v) {
 }
 
 
+function createRoad() {
+  return {
+    edges: [],
+    tiles: [],
+    color: getRandomVibrantColor(),
+    reservedTiles: new Set(),
+    reservePath(path) {
+      path.forEach(tile => {
+        if (this.tiles.some(t => t.r === tile.r && t.c === tile.c)) {
+          this.reservedTiles.add(`${tile.r},${tile.c}`);
+        }
+      });
+    },
+    releaseTile(tile) {
+      this.reservedTiles.delete(`${tile.r},${tile.c}`);
+    },
+    isTileReserved(tile) {
+      return this.reservedTiles.has(`${tile.r},${tile.c}`);
+    }
+  };
+}
 function generateRoads() {
  
   console.log(freeTiles);
@@ -89,8 +109,10 @@ function generateRoads() {
           i++;
         }
         
-        let tiles = []
-        let road = {edges:[], tiles:tiles, color: getRandomVibrantColor()};
+        // let road = {edges:[], tiles:tiles, color: getRandomVibrantColor()};
+        let road = createRoad();
+        let tiles = road.tiles;
+        
         for (i = rMin; i <= rMax; i++) {
           tiles.push({r: i, c: tile.c})
           roadsByGrid[i][tile.c] = road;
@@ -123,8 +145,9 @@ function generateRoads() {
           }
           i++;
         }
-        let tiles = []
-        let road = {edges:[], tiles:tiles, color: getRandomVibrantColor()};
+        let road = createRoad();
+        let tiles = road.tiles;
+
         
         for (i = cMin; i <= cMax; i++) {
           tiles.push({r: tile.r, c: i})
@@ -152,7 +175,10 @@ function generateRoads() {
       //console.log(tile)
       let orthos = [{r: tile.r-1, c: tile.c}, {r: tile.r+1, c: tile.c}, {r: tile.r, c: tile.c-1}, {r: tile.r, c: tile.c-1}]
       let edges = [];
-      let road = {tiles:[tile],edges: edges, color: getRandomVibrantColor()};
+      // let road = {tiles:[tile],edges: edges, color: getRandomVibrantColor()};
+      let road = createRoad();
+      road.tiles.push(tile);
+      road.edges = edges;
       orthos.forEach((o)=> {
         let e = roadsByGrid[o.r][o.c];
         if (e !== undefined) {
@@ -171,44 +197,12 @@ function generateRoads() {
   
 }
 
-function reservePath(bot, path, startTime) {
-  path.forEach((tile, i) => {
-    const time = startTime + i;
-    const key = `${tile.r},${tile.c},${time}`;
-    reservationTable.set(key, { bot, priority: bot.goal.event.priority });
-  });
-}
-function isPathFree(path, startTime, priority) {
-  return path.every((tile, i) => {
-    const time = startTime + i;
-    const key = `${tile.r},${tile.c},${time}`;
-    const reservation = reservationTable.get(key);
-    return !reservation || reservation.priority >= priority;
-  });
-}
 
-function planAndReservePath(bot, start, goal) {
-  const path = bot.aStar(start, goal);
-  path.forEach((tile)=> {
-    roadsByGrid[tile.r][tile.c].color = {r: 255, g:0, b:0};
-  });
-  if (!path || path.length === 0) {
-    console.log(`[${bot.type}] No path found from (${start.r},${start.c}) to (${goal.r},${goal.c})`);
-    return null;
-  }
 
-  const priority = bot.goal?.event?.priority ?? 99;
-  const startTime = bot.pathIndex || 0;
 
-  if (!isPathFree(path, startTime, priority)) {
-    console.log(`[${bot.type}] Path blocked by higher-priority reservation`);
-    return null;
-  }
 
-  reservePath(bot, path, startTime);
-  console.log(`[${bot.type}] Reserved path of length ${path.length} at priority ${priority}`);
-  return path;
-}
+
+
 
 function sketch(p5) {
   let warehouse_location = {
@@ -246,6 +240,12 @@ function sketch(p5) {
     robots.push(new Robot('cop'));
     robots.push(new Robot('fire'));
     robots.push(new Robot('ems'));
+    robots.push(new Robot('cop'));
+    robots.push(new Robot('fire'));
+    robots.push(new Robot('ems'));
+    robots.push(new Robot('main'));
+    robots.push(new Robot('main'));
+
     warehouse_location.cop = getRandomBoringTile()
     warehouse_location.ems = getRandomBoringTile()
     warehouse_location.fire = getRandomBoringTile()
@@ -273,6 +273,7 @@ function sketch(p5) {
       this.stock = [];
       this.requested_item = null //Requested item for a dispatch must be cleared after the goal is started
       this.intermediateTargetReached = false
+      this.failedPathCounter = 0;
 
 
       switch (this.type) {
@@ -294,99 +295,154 @@ function sketch(p5) {
                 break;
       }
     }
-
-    update() { 
-      if (this.goal === undefined) {
-       //if there is no goal 
-      } 
-      else {
-        // console.log("stock status and target status " + this.has_stock(this.requested_item) + " " + this.intermediateTargetReached + (this.path ? " " + this.path.length : ""));
-        
-        if (!this.has_stock(this.requested_item) && !this.intermediateTargetReached) {
-          // Need to go to warehouse first
-          // console.log("Passed check1");
-          // console.log("Type " + this.type);
-          
-          if (this.path === undefined) {
-            this.target = warehouse_location[this.type];
-            console.log(`Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`);      
-            if (!this.isWalkable(this.target.r, this.target.c)) {
-              console.error(`Warehouse location (${this.target.r}, ${this.target.c}) is not walkable!`);
-              alert(`Invalid warehouse location for ${this.type}! Please update warehouse coordinates.`);
-              this.intermediateTargetReached = true; 
-              return;
-            }
-            let target = this.target;
-            let start = { r: this.tile.r, c: this.tile.c };
-            const path = planAndReservePath(this, start, target);
-            if (path) {
-              this.path = path;
-              this.pathIndex = 0;
-            } else {
-              // retry next frame
-              return;
-            }
-          }
-          
-          // Move along the path
-          if (this.path.length > 0 && this.pathIndex < this.path.length) {
-            this.pathIndex = this.pathIndex + 1;
-            this.tile = this.path[this.pathIndex];
-            
-            // Check if we've reached the warehouse
-            if (this.pathIndex >= this.path.length - 1) {
-              console.log("Reached warehouse");
-              this.stock.push(this.requested_item);
-              this.requested_item = null;
-              this.path = undefined;
-              this.pathIndex = undefined;
-              this.intermediateTargetReached = true;
-              // console.log("Passed check2");
-            }
-          } else {
-            
-            console.log("No path needed to warehouse - already there");
-            this.stock.push(this.requested_item);
-            this.requested_item = null;
-            this.path = undefined;
-            this.pathIndex = undefined;
-            this.intermediateTargetReached = true;
-            // console.log("Passed check2");
-          }
+    reservePath(path) {
+      path.forEach(tile => {
+        let road = roadsByGrid[tile.r]?.[tile.c];
+        if (road) {
+          road.reservePath([tile]);
         }
-        else{
-          if (this.path === undefined) {
-            // console.log(this.goal);
-            let target = {r: this.goal.event.r, c: this.goal.event.c};
-            let start = { r: this.tile.r, c: this.tile.c };
-
-            const path = planAndReservePath(this, start, target);
-            if (path) {
-              this.path = path;
-              this.pathIndex = 0;
-            } else {
-              // retry next frame
-              return;
-            }
-        }
-        
-
-         else 
-         {
-          if (this.pathIndex < this.path.length-1) {
-            this.pathIndex = this.pathIndex + 1;
-            this.tile = this.path[this.pathIndex];
-          }else {
-            this.resolveConflict();
-            this.goal = undefined;
-            this.path = undefined;
-            this.pathIndex = undefined;
-          }
-          
-        }
+      });
+    }
+    releaseTile(tile) {
+      let road = roadsByGrid[tile.r]?.[tile.c];
+      if (road) {
+        road.releaseTile(tile);
       }
     }
+    releaseEntirePath() {
+      if (!this.path) return;
+      this.path.forEach(tile => this.releaseTile(tile));
+    }
+    // navigateToTarget(target, onArrival) {
+      
+    //   if (!this.path) {
+    //     const start = { r: this.tile.r, c: this.tile.c };
+    //     const path = this.aStar(start, target);
+        
+    //     if (path) {
+    //       this.path = path;
+    //       this.pathIndex = 0;
+    //       this.reservePath(this.path);
+    //     } else {
+    //       // Wait for next tick
+    //       return;
+    //     }
+    //   }
+    
+    //   // Step along the path
+    //   if (this.pathIndex < this.path.length - 1) {
+    //     const prevTile = this.path[this.pathIndex];
+    //     this.releaseTile(prevTile);
+
+    //     this.pathIndex++;
+    //     this.tile = this.path[this.pathIndex];
+    
+        
+    //   }
+    
+    //   // Check if we arrived
+    //   if (this.pathIndex >= this.path.length - 1 ||
+    //       (this.tile.r === target.r && this.tile.c === target.c)) {
+    //     onArrival();
+    //   }
+    // }
+    safeReleaseCurrentTile() {
+      if (this.path && this.pathIndex !== undefined && this.path[this.pathIndex]) {
+        this.releaseTile(this.path[this.pathIndex]);
+      }
+    }
+    update() {
+      if (!this.goal) return;
+    
+      const atWarehouse = this.tile.r === warehouse_location[this.type].r &&
+                          this.tile.c === warehouse_location[this.type].c;
+    
+      // Step 1: Go to warehouse if item is needed and not yet collected
+      if (!this.has_stock(this.requested_item) && !this.intermediateTargetReached) {
+        const start = { r:this.tile.r, c: this.tile.c};
+        const target = warehouse_location[this.type]
+        if (!this.path) {
+          this.failedPathCounter++;
+        
+          if (this.failedPathCounter % 5 === 0) { // Try every 5 updates
+            const path = this.aStar(start, target);
+            if (path && path.length > 0) {
+              this.path = path;
+              this.pathIndex = 0;
+              this.reservePath(path);
+              this.failedPathCounter = 0; // Reset on success
+            }
+          }
+        
+          return;
+        }
+        
+        if (this.pathIndex < this.path.length - 1) {
+          const prevTile = this.path[this.pathIndex];   // <- Add this
+          this.releaseTile(prevTile);                   // <- And this
+        
+          this.pathIndex++;
+          this.tile = this.path[this.pathIndex];
+        }
+        
+    
+        if (this.pathIndex >= this.path.length - 1 || atWarehouse) {
+          console.log("Reached warehouse");
+          this.stock.push(this.requested_item);
+          this.safeReleaseCurrentTile();
+          this.requested_item = null;
+          this.releaseEntirePath();
+          this.path = undefined;
+          this.pathIndex = undefined;
+          this.intermediateTargetReached = true;
+          // this.releaseTile(this.path[this.pathIndex]);
+          
+        }
+    
+        return;
+      }
+    
+      // Step 2: Go to event
+      const start = {r: this.tile.r, c: this.tile.c};
+      const target = { r: this.goal.event.r, c: this.goal.event.c};
+      if (!this.path) {
+      this.failedPathCounter++;
+
+      if (this.failedPathCounter % 5 === 0) { // Try every 5 updates
+        const path = this.aStar(start, target);
+      if (path && path.length > 0) {
+        this.path = path;
+        this.pathIndex = 0;
+        this.reservePath(path);
+        this.failedPathCounter = 0; // Reset on success
+      }
   }
+
+  return;
+}
+
+    
+      if (this.pathIndex < this.path.length - 1) {
+        const prevTile = this.path[this.pathIndex];  // Save tile before moving
+        this.releaseTile(prevTile);                  // Release it
+
+        this.pathIndex++;
+        this.tile = this.path[this.pathIndex];       // Step to next tile
+      }
+    
+      if (this.pathIndex >= this.path.length - 1) {
+        this.resolveConflict();
+        this.safeReleaseCurrentTile();
+        this.releaseEntirePath();
+        this.goal = undefined;
+        this.path = undefined;
+        this.pathIndex = undefined;
+        // this.releaseTile(this.path[this.pathIndex]);
+      }
+    }
+    
+    
+  
     has_stock(desired) {
       // console.log("stock currently " + this.stock)
       // console.log("Do we have what we need " + this.stock.includes(desired))
@@ -401,6 +457,7 @@ function sketch(p5) {
       // console.log(this.goal.outstandingBots);
       this.goal.outstandingBots--;
       if (this.goal.outstandingBots < 1) {
+
         if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
           // console.log(this.goal.event.requiredStock);
           // console.log(this.goal.providedStock);
@@ -421,7 +478,7 @@ function sketch(p5) {
     }
     
     aStar(start, goal) {
-      console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
+      // console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
       let openSet = new Set();
       let cameFrom = new Map();
       let gScore = new Map();
@@ -441,26 +498,24 @@ function sketch(p5) {
           // console.log(current);
   
           if (current.r === goal.r && current.c === goal.c) {
-            console.log("We found a path for "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
-            console.log("Path found is " + this.reconstructPath(cameFrom, goal, start))
+            // console.log("We found a path for "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
+            // console.log("Path found is " + this.reconstructPath(cameFrom, goal, start))
               return this.reconstructPath(cameFrom, goal, start);
           }
   
           openSet.delete(this.hash(current));
-  
+
           for (let neighbor of this.getNeighbors(current)) {
-            let currentG = gScore.get(this.hash(current));
-            
-              let tentativeGScore = ( currentG===undefined?Infinity:currentG) + 1;
-              
-              if (tentativeGScore < (gScore.get(this.hash(neighbor)) || Infinity)) {
-                  
-                  cameFrom.set(this.hash(neighbor), current);
-                  gScore.set(this.hash(neighbor), tentativeGScore);
-                  fScore.set(this.hash(neighbor), tentativeGScore + this.heuristic(neighbor, goal));
-  
-                  openSet.add(this.hash(neighbor));
-              }
+            const currentG = gScore.get(this.hash(current)) ?? Infinity;
+            const tentativeGScore = currentG + 1;
+
+            if (tentativeGScore < (gScore.get(this.hash(neighbor)) ?? Infinity)) {
+              cameFrom.set(this.hash(neighbor), current);
+              gScore.set(this.hash(neighbor), tentativeGScore);
+              fScore.set(this.hash(neighbor), tentativeGScore + this.heuristic(neighbor, goal));
+
+              openSet.add(this.hash(neighbor));
+            }
           }
       }
       console.log("no path")
@@ -505,8 +560,15 @@ function sketch(p5) {
   }
   
   // Check if a tile is walkable
+  // isWalkable(r, c) {
+  //   return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length && grid[r][c] === 0;
+  // }
   isWalkable(r, c) {
-      return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length && grid[r][c] === 0;
+    if (r < 0 || c < 0 || r >= grid.length || c >= grid[0].length) return false;
+    if (grid[r][c] !== 0) return false;
+  
+    const road = roadsByGrid[r]?.[c];
+    return !(road && road.isTileReserved({r, c}));
   }
   
   // Reconstruct path from A* search
@@ -525,6 +587,7 @@ function sketch(p5) {
           current = cameFrom.get(this.hash(current));
       }
       // console.log(path);
+      path.unshift(start)
       return path;
   }
   
@@ -632,41 +695,82 @@ function sketch(p5) {
         description: event.description,
         requiredStock: event.requiredStock,
         suppliedStock: [],
-        image: event.image  
+        image: event.image , 
+        priority: event.priority
       })
     }
     setTimeout(spawnRandomEvent, 10000 + Math.random()*5000);
   }
 
   function dispatch() {
-    const needs = {
+    const botPools = {
       copNeeded: copBots,
       fireNeeded: fireBots,
-      emsNeeded: emsBots, 
-      maintanceNeeded: mainBots
+      emsNeeded: emsBots,
+      maintanceNeeded: mainBots,
     };
+  
+    // Sort events by priority
     addressedEvents.sort((a, b) => a.event.priority - b.event.priority);
-
-    addressedEvents.forEach((currentEvent)=> {
-      Object.keys(needs).forEach((need) => {
-        if (currentEvent[need]) {  
-          needs[need].forEach((bot) => {
-            if (bot.goal === undefined) {
-              if (currentEvent.outstandingBots <= 0) return; //returns if we have no available bots
-
-              bot.goal = currentEvent;  
-              // bot.requested_item = addressedEvents.requestedStock
-              bot.requested_item = currentEvent.requestedStock;
-              console.log("Requested Item " + bot.requested_item)
-              currentEvent[need] = false; 
-            }
-          });
+  
+    addressedEvents.forEach(event => {
+      Object.entries(botPools).forEach(([needKey, botList]) => {
+        if (event[needKey]) {
+          assignBotToEvent(event, needKey, botList);
         }
       });
     });
-
   }
+  function assignBotToEvent(event, needKey, botList) {
+    for (let bot of botList) {
+      if (bot.goal !== undefined) continue;
+      if (event.outstandingBots <= 0) break;
+  
+      const matchingItems = event.requestedStock.filter(item =>
+        Stocks[bot.type].map(stock => stock.value).includes(item)
+      );
+  
+      if (matchingItems.length === 0) continue;
+  
+      bot.goal = event;
+      bot.requested_item = matchingItems[0];
+      event[needKey] = false;
+      break;
+    }
+  }
+  
+  
+  function drawWarehouse() {
 
+
+    Object.entries(warehouse_location).forEach(([type, loc]) => {
+      const wx = loc.r * tileSize + tileSize / 2 - p5.width / 2;
+      const wy = loc.c * tileSize + tileSize / 2 - p5.height / 2;
+      const pentagonRadius = tileSize * 1;
+      const alpha = p5.TWO_PI / 5;
+      const startAngle = -p5.PI / 2;
+    
+      // Set fill color based on warehouse type
+      switch(type) {
+        case 'cop': p5.fill(42, 195, 222); break;
+        case 'fire': p5.fill(247, 118, 142); break;
+        case 'ems': p5.fill(187, 154, 247); break;
+        case 'main': p5.fill(224, 175, 104); break;
+        default: p5.fill(150);
+      }
+    
+      p5.stroke(0);
+      p5.strokeWeight(1);
+      p5.beginShape();
+      for (let i = 0; i < 5; i++) {
+        const angle = startAngle + i * alpha;
+        const vx = wx + pentagonRadius * p5.cos(angle);
+        const vy = wy + pentagonRadius * p5.sin(angle);
+        p5.vertex(vx, vy);
+      }
+      p5.endShape(p5.CLOSE);
+    });
+  }
   p5.draw = () => {
     dispatch();
     timer ++;
@@ -702,7 +806,17 @@ function sketch(p5) {
     p5.stroke(0, 0, 0, 10);
     grid.forEach((row, r) => {
       row.forEach((type, c)=> {
-        p5.fill(grid[r][c]===1?255:0, 0, 0, grid[r][c]===1?50:0);
+        let road = roadsByGrid[r]?.[c];
+        if (road && road.isTileReserved({r, c})) {
+          p5.fill(0, 0, 255, 100); // Blue tint for reserved path
+        }
+        // p5.fill(grid[r][c]===1?255:0, 0, 0, grid[r][c]===1?50:0);
+        if (grid[r][c] === 1) {
+          p5.fill(255, 0, 0, 50); // wall
+        
+        } else {
+          p5.noFill();
+        }
         //p5.rect(r*tileSize - p5.width/2, c*tileSize - p5.height/2, (r+1)*tileSize - p5.width/2, (c+1)*tileSize - p5.height/2);
       
       });
@@ -741,8 +855,8 @@ function sketch(p5) {
     robots.forEach((robot)=> {
       robot.draw();
     })
-
-
+    
+    drawWarehouse()
 
    
     

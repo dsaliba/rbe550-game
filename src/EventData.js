@@ -1,48 +1,66 @@
 //File contains the information about the items in stock and the events with their associated stock needed and images
 const Stocks = {
+    // cop: [
+    //     { value: 'handcuffs', label: 'Handcuffs' },
+    //     { value: 'breathalizer', label: 'Breathalyzer' },
+    //     { value: 'taser', label: 'Taser' },
+    //     { value: 'radio', label: 'Radio' },
+    //     { value: 'baton', label: 'Baton' },
+    //     { value: 'spike-strips', label: 'Spike Strips' },
+    //     { value: 'flashlight', label: 'Flashlight' },
+    //     { value: 'crowbar', label: 'Crowbar' },
+    //     { value: 'kevlar-vest', label: 'Kevlar Vest' },
+    // ],
+    // fire: [
+    //     { value: 'metalcutter', label: 'Metal Cutter' },
+    //     { value: 'ladder', label: 'Ladder' },
+    //     { value: 'hose', label: 'Hose' },
+    //     { value: 'fire-extinguisher', label: 'Fire Extinguisher' },
+    //     { value: 'breathing-apparatus', label: 'Breathing Apparatus' },
+    //     { value: 'axe', label: 'Axe' },
+    //     { value: 'thermal-camera', label: 'Thermal Camera' },
+    //     { value: 'fire-blanket', label: 'Fire Blanket' },
+    //     { value: 'jaws-of-life', label: 'Jaws of Life' },
+    // ],
+    // ems: [
+    //     { value: 'stretcher', label: 'Stretcher' },
+    //     { value: 'burn-kit', label: 'Burn Kit' },
+    //     { value: 'defibrillator', label: 'Defibrillator' },
+    //     { value: 'oxygen-tank', label: 'Oxygen Tank' },
+    //     { value: 'first-aid-kit', label: 'First Aid Kit' },
+    //     { value: 'splint', label: 'Splint' },
+    //     { value: 'epipen', label: 'EpiPen' },
+    //     { value: 'cervical-collar', label: 'Cervical Collar' },
+    //     { value: 'trauma-kit', label: 'Trauma Kit' },
+    // ],
+    // main: [
+    //     { value: 'manhole-cover', label: 'Manhole Cover' },
+    //     { value: 'fuse', label: 'Fuse' },
+    //     { value: 'wrench', label: 'Wrench' },
+    //     { value: 'shovel', label: 'Shovel' },
+    //     { value: 'chainsaw', label: 'Chainsaw' },
+    //     { value: 'generator', label: 'Generator' },
+    //     { value: 'road-signs', label: 'Road Signs' },
+    //     { value: 'toolbox', label: 'Toolbox' },
+    //     { value: 'drain-pump', label: 'Drain Pump' },
+    // ]
     cop: [
         { value: 'handcuffs', label: 'Handcuffs' },
-        { value: 'breathalizer', label: 'Breathalyzer' },
-        { value: 'taser', label: 'Taser' },
-        { value: 'radio', label: 'Radio' },
-        { value: 'baton', label: 'Baton' },
-        { value: 'spike-strips', label: 'Spike Strips' },
-        { value: 'flashlight', label: 'Flashlight' },
-        { value: 'crowbar', label: 'Crowbar' },
-        { value: 'kevlar-vest', label: 'Kevlar Vest' },
+
     ],
     fire: [
-        { value: 'metalcutter', label: 'Metal Cutter' },
-        { value: 'ladder', label: 'Ladder' },
-        { value: 'hose', label: 'Hose' },
-        { value: 'fire-extinguisher', label: 'Fire Extinguisher' },
+
         { value: 'breathing-apparatus', label: 'Breathing Apparatus' },
-        { value: 'axe', label: 'Axe' },
-        { value: 'thermal-camera', label: 'Thermal Camera' },
-        { value: 'fire-blanket', label: 'Fire Blanket' },
+
         { value: 'jaws-of-life', label: 'Jaws of Life' },
     ],
     ems: [
-        { value: 'stretcher', label: 'Stretcher' },
         { value: 'burn-kit', label: 'Burn Kit' },
-        { value: 'defibrillator', label: 'Defibrillator' },
-        { value: 'oxygen-tank', label: 'Oxygen Tank' },
-        { value: 'first-aid-kit', label: 'First Aid Kit' },
-        { value: 'splint', label: 'Splint' },
-        { value: 'epipen', label: 'EpiPen' },
-        { value: 'cervical-collar', label: 'Cervical Collar' },
-        { value: 'trauma-kit', label: 'Trauma Kit' },
+
     ],
     main: [
         { value: 'manhole-cover', label: 'Manhole Cover' },
-        { value: 'fuse', label: 'Fuse' },
-        { value: 'wrench', label: 'Wrench' },
-        { value: 'shovel', label: 'Shovel' },
-        { value: 'chainsaw', label: 'Chainsaw' },
-        { value: 'generator', label: 'Generator' },
-        { value: 'road-signs', label: 'Road Signs' },
-        { value: 'toolbox', label: 'Toolbox' },
-        { value: 'drain-pump', label: 'Drain Pump' },
+   
     ]
 };
 // I would like to add a random image that can appear that isnt related so the user can say this is not a real event
