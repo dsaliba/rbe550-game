@@ -4,7 +4,8 @@ import { ReactP5Wrapper } from "@p5-wrapper/react";
 import matrix from "./Matrix";
 import Select from 'react-select';
 import {Events, Stocks} from "./EventData"
-
+import { supabase } from './supabaseClient';
+console.log("🧪 Supabase client:", supabase);
 let grid;
 let freeTiles = [];
 
@@ -20,7 +21,55 @@ let mainBots = [];
 // let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
 let roads = [];
 let roadsByGrid;
+let sessionId;
+let sessionStartTime = Date.now();
+let activeEvents = {}; // key: eventId or tile position
 
+async function startEventRecord(event, eventKey) {
+  const startTime = Date.now();
+  const { data, error } = await supabase
+    .from('game_events')
+    .insert([{
+      session_id: sessionId,
+      event_type: event.title,  // <- changed to use event object
+      start_time: new Date()
+    }])
+    .select();
+
+  if (error) console.error("Event start failed", error);
+  else {
+    activeEvents[eventKey] = {
+      id: data[0].id,
+      startTime
+    };
+    event.supabaseId = data[0].id;
+    event.startTimestamp = startTime;
+  }
+}
+
+async function endGameSession() {
+  const endTime = Date.now();
+  const duration = endTime - sessionStartTime;
+
+  const { error } = await supabase
+    .from('game_sessions')
+    .update({
+      end_time: new Date(),
+      duration_ms: duration
+    })
+    .eq('id', sessionId);
+
+  if (error) console.error("Failed to close session", error);
+}
+async function startGameSession() {
+  const { data, error } = await supabase
+    .from('game_sessions')
+    .insert([{ start_time: new Date() }])
+    .select();
+
+  if (error) console.error("Session start failed", error);
+  else sessionId = data[0].id;
+}
 function getRandomVibrantColor() {
   const goldenRatioConjugate = 0.618033988749895;
   let hue = Math.random();
@@ -31,6 +80,25 @@ function getRandomVibrantColor() {
   const rgb = hsvToRgb(hue, 0.9, 0.9);
   return rgb;
 }
+async function completeEventRecord(event) {
+  if (!event.supabaseId || !event.startTimestamp) return;
+
+  const endTime = Date.now();
+  const duration = endTime - event.startTimestamp;
+
+  const { error } = await supabase
+    .from('game_events')
+    .update({
+      end_time: new Date(),
+      duration_ms: duration,
+      success: event.requiredStock.length === event.providedStock.length
+    })
+    .eq('id', event.supabaseId);
+
+  if (error) console.error("Event completion failed:", error);
+  delete activeEvents[event.title + "_" + event.r + "_" + event.c];
+}
+
 
 function hsvToRgb(h, s, v) {
   let r, g, b;
@@ -63,20 +131,29 @@ function createRoad() {
     edges: [],
     tiles: [],
     color: getRandomVibrantColor(),
-    reservedTiles: new Set(),
-    reservePath(path) {
+    reservedTiles: new Map(), 
+    reservePath(path, priority) {
       path.forEach(tile => {
+        const key = `${tile.r},${tile.c}`;
         if (this.tiles.some(t => t.r === tile.r && t.c === tile.c)) {
-          this.reservedTiles.add(`${tile.r},${tile.c}`);
+          const existingPriority = this.reservedTiles.get(key);
+          if (existingPriority === undefined || priority < existingPriority) {
+            this.reservedTiles.set(key, priority);
+          }
         }
       });
     },
+    
     releaseTile(tile) {
       this.reservedTiles.delete(`${tile.r},${tile.c}`);
     },
-    isTileReserved(tile) {
-      return this.reservedTiles.has(`${tile.r},${tile.c}`);
+    isTileReserved(tile, priority) {
+      const key = `${tile.r},${tile.c}`;
+      const reservedPriority = this.reservedTiles.get(key);
+      // Only block if another bot has a strictly higher priority
+      return reservedPriority !== undefined && reservedPriority < priority;
     }
+    
   };
 }
 function generateRoads() {
@@ -256,6 +333,7 @@ function sketch(p5) {
 
   p5.setup = () => {
     p5.createCanvas(imgSize.w  , imgSize.h, p5.WEBGL)
+    startGameSession()
     rows = Math.floor(imgSize.w/tileSize);
     cols = Math.floor(imgSize.h/tileSize);
     //grid = Array.from(Array(rows), () => new Array(cols).fill(1));
@@ -296,13 +374,15 @@ function sketch(p5) {
       }
     }
     reservePath(path) {
+      const priority = this.goal?.event?.priority ?? 999;  // fallback to low priority
       path.forEach(tile => {
         let road = roadsByGrid[tile.r]?.[tile.c];
         if (road) {
-          road.reservePath([tile]);
+          road.reservePath([tile], priority);
         }
       });
     }
+    
     releaseTile(tile) {
       let road = roadsByGrid[tile.r]?.[tile.c];
       if (road) {
@@ -356,7 +436,21 @@ function sketch(p5) {
     
       const atWarehouse = this.tile.r === warehouse_location[this.type].r &&
                           this.tile.c === warehouse_location[this.type].c;
-    
+      if (this.path) {
+        const myPriority = this.goal?.event?.priority ?? 999;
+        for (let tile of this.path) {
+          let road = roadsByGrid[tile.r]?.[tile.c];
+          if (road && road.isTileReserved(tile, myPriority)) {
+            // ✅ This means someone else with higher priority owns this tile
+            this.releaseEntirePath();
+            this.path = undefined;
+            this.pathIndex = undefined;
+            break;
+          }
+        }
+      }
+                        
+                          
       // Step 1: Go to warehouse if item is needed and not yet collected
       if (!this.has_stock(this.requested_item) && !this.intermediateTargetReached) {
         const start = { r:this.tile.r, c: this.tile.c};
@@ -455,9 +549,10 @@ function sketch(p5) {
         }
       });
       // console.log(this.goal.outstandingBots);
+
       this.goal.outstandingBots--;
       if (this.goal.outstandingBots < 1) {
-
+        completeEventRecord(this.goal.event)
         if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
           // console.log(this.goal.event.requiredStock);
           // console.log(this.goal.providedStock);
@@ -568,8 +663,10 @@ function sketch(p5) {
     if (grid[r][c] !== 0) return false;
   
     const road = roadsByGrid[r]?.[c];
-    return !(road && road.isTileReserved({r, c}));
+    const priority = this.goal?.event?.priority ?? 999;
+    return !(road && road.isTileReserved({ r, c }, priority));
   }
+  
   
   // Reconstruct path from A* search
   reconstructPath(cameFrom, goal, start) {
@@ -735,6 +832,9 @@ function sketch(p5) {
       bot.goal = event;
       bot.requested_item = matchingItems[0];
       event[needKey] = false;
+      if (!event.supabaseId) {
+        startEventRecord(event, event.title + "_" + event.r + "_" + event.c);
+      }
       break;
     }
   }
