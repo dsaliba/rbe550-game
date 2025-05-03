@@ -1,10 +1,13 @@
-import * as React from "react";
-import { useReducer} from "react";
+// import * as React from "react";
+// import { useReducer} from "react";
 import { ReactP5Wrapper } from "@p5-wrapper/react";
 import matrix from "./Matrix";
 import Select from 'react-select';
 import {Events, Stocks} from "./EventData"
+import { supabase } from './supabaseClient';
+import React, { useEffect, useReducer } from "react";
 
+console.log("🧪 Supabase client:", supabase);
 let grid;
 let freeTiles = [];
 
@@ -20,6 +23,116 @@ let mainBots = [];
 // let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
 let roads = [];
 let roadsByGrid;
+let sessionId;
+let sessionStartTime = Date.now();
+let activeEvents = {}; // key: eventId or tile position
+const table_name = 'game_sessions'
+
+async function insertTestEventRecord() {    //this just inserts a test call to make sure the schema was good
+  const start = new Date();
+  const end = new Date(start.getTime() + 5000); 
+  const duration = end - start;
+
+  const { data, error } = await supabase
+    .from(table_name)
+    .insert([{
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      duration_ms: duration,
+      event_type: "test_event",
+      success: true,
+    }])
+    .select();
+
+  if (error) {
+    console.error("Failed to insert test event:", error);
+  } else {
+    console.log("Test event inserted:", data);
+  }
+}
+
+async function startGameSession() {  //starts a game session I am not to sure I actually need to call this because I store the uuid elsewhere
+  const { data, error } = await supabase
+    .from('game_sessions')
+    .insert([{ start_time: new Date() }])
+    .select();
+
+  if (error) {
+    console.error("Session start failed", error);
+  } else {
+    sessionId = data[0].id;
+    sessionStartTime = Date.now();
+    console.log("Game session started:", sessionId);
+  }
+}
+
+
+async function startEventRecord(event, eventKey) { //This I think should be the main function but not usre how to get the timing calls right
+  const now = new Date();
+
+  const { data, error } = await supabase
+    .from('game_sessions')
+    .insert([{
+      start_time: now,
+      event_type: event.title
+    }])
+    .select();
+
+  if (error) {
+    console.error("Event start failed", error);
+    return;
+  }
+
+  const eventId = data[0].id;
+  activeEvents[eventKey] = {
+    id: eventId,
+    startTime: now.getTime()
+  };
+
+  event.supabaseId = eventId;
+  event.startTimestamp = now.getTime();
+}
+
+async function completeEvent(event, eventKey) { //call this after the the event is finished records the event type time to complete and its success bool
+  const active = activeEvents[eventKey];
+  if (!active) return;
+
+  const endTime = new Date();
+  const duration = endTime.getTime() - active.startTime;
+
+  const { error } = await supabase
+    .from('game_sessions')
+    .update({
+      end_time: endTime,
+      duration_ms: duration,
+      success: event.requiredStock.length === event.providedStock.length
+    })
+    .eq('id', active.id);
+
+  if (error) {
+    console.error("Event completion failed", error);
+  } else {
+    console.log("Event completed:", active.id);
+    delete activeEvents[eventKey];
+  }
+}
+
+async function endGameSession() {
+  const endTime = new Date();
+  const duration = endTime.getTime() - sessionStartTime;
+
+  const { error } = await supabase
+    .from(table_name)
+    .update({
+      end_time: endTime,
+      duration_ms: duration
+    })
+    .eq('id', sessionId);
+
+  if (error) console.error("❌ Session end failed", error);
+  else console.log("✅ Session ended:", sessionId);
+}
+
 
 function getRandomVibrantColor() {
   const goldenRatioConjugate = 0.618033988749895;
@@ -31,6 +144,7 @@ function getRandomVibrantColor() {
   const rgb = hsvToRgb(hue, 0.9, 0.9);
   return rgb;
 }
+
 
 function hsvToRgb(h, s, v) {
   let r, g, b;
@@ -63,20 +177,29 @@ function createRoad() {
     edges: [],
     tiles: [],
     color: getRandomVibrantColor(),
-    reservedTiles: new Set(),
-    reservePath(path) {
+    reservedTiles: new Map(), 
+    reservePath(path, priority) {
       path.forEach(tile => {
+        const key = `${tile.r},${tile.c}`;
         if (this.tiles.some(t => t.r === tile.r && t.c === tile.c)) {
-          this.reservedTiles.add(`${tile.r},${tile.c}`);
+          const existingPriority = this.reservedTiles.get(key);
+          if (existingPriority === undefined || priority < existingPriority) {
+            this.reservedTiles.set(key, priority);
+          }
         }
       });
     },
+    
     releaseTile(tile) {
       this.reservedTiles.delete(`${tile.r},${tile.c}`);
     },
-    isTileReserved(tile) {
-      return this.reservedTiles.has(`${tile.r},${tile.c}`);
+    isTileReserved(tile, priority) {
+      const key = `${tile.r},${tile.c}`;
+      const reservedPriority = this.reservedTiles.get(key);
+      // Only block if another bot has a strictly higher priority
+      return reservedPriority !== undefined && reservedPriority < priority;
     }
+    
   };
 }
 function generateRoads() {
@@ -256,6 +379,8 @@ function sketch(p5) {
 
   p5.setup = () => {
     p5.createCanvas(imgSize.w  , imgSize.h, p5.WEBGL)
+    // startGameSession()
+
     rows = Math.floor(imgSize.w/tileSize);
     cols = Math.floor(imgSize.h/tileSize);
     //grid = Array.from(Array(rows), () => new Array(cols).fill(1));
@@ -296,13 +421,15 @@ function sketch(p5) {
       }
     }
     reservePath(path) {
+      const priority = this.goal?.event?.priority ?? 999;  // fallback to low priority
       path.forEach(tile => {
         let road = roadsByGrid[tile.r]?.[tile.c];
         if (road) {
-          road.reservePath([tile]);
+          road.reservePath([tile], priority);
         }
       });
     }
+    
     releaseTile(tile) {
       let road = roadsByGrid[tile.r]?.[tile.c];
       if (road) {
@@ -356,7 +483,21 @@ function sketch(p5) {
     
       const atWarehouse = this.tile.r === warehouse_location[this.type].r &&
                           this.tile.c === warehouse_location[this.type].c;
-    
+      if (this.path) {
+        const myPriority = this.goal?.event?.priority ?? 999;
+        for (let tile of this.path) {
+          let road = roadsByGrid[tile.r]?.[tile.c];
+          if (road && road.isTileReserved(tile, myPriority)) {
+            // ✅ This means someone else with higher priority owns this tile
+            this.releaseEntirePath();
+            this.path = undefined;
+            this.pathIndex = undefined;
+            break;
+          }
+        }
+      }
+                        
+                          
       // Step 1: Go to warehouse if item is needed and not yet collected
       if (!this.has_stock(this.requested_item) && !this.intermediateTargetReached) {
         const start = { r:this.tile.r, c: this.tile.c};
@@ -455,9 +596,10 @@ function sketch(p5) {
         }
       });
       // console.log(this.goal.outstandingBots);
+
       this.goal.outstandingBots--;
       if (this.goal.outstandingBots < 1) {
-
+        // completeEventRecord(this.goal.event)
         if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
           // console.log(this.goal.event.requiredStock);
           // console.log(this.goal.providedStock);
@@ -467,6 +609,8 @@ function sketch(p5) {
           console.log("Required:", this.goal.event.requiredStock);
           console.log("Provided:", this.goal.providedStock);
         }
+        const eventKey = `${this.goal.event.title}_${this.goal.event.r}_${this.goal.event.c}`;
+        completeEvent(this.goal.event, eventKey);
         let eventIndex = 0;
         let addressedEventIndex = 0;
         events.forEach((v, i)=>{if (v===this.goal.event){eventIndex = i; return;}})
@@ -568,8 +712,10 @@ function sketch(p5) {
     if (grid[r][c] !== 0) return false;
   
     const road = roadsByGrid[r]?.[c];
-    return !(road && road.isTileReserved({r, c}));
+    const priority = this.goal?.event?.priority ?? 999;
+    return !(road && road.isTileReserved({ r, c }, priority));
   }
+  
   
   // Reconstruct path from A* search
   reconstructPath(cameFrom, goal, start) {
@@ -721,7 +867,7 @@ function sketch(p5) {
       });
     });
   }
-  function assignBotToEvent(event, needKey, botList) {
+  async function assignBotToEvent(event, needKey, botList) {
     for (let bot of botList) {
       if (bot.goal !== undefined) continue;
       if (event.outstandingBots <= 0) break;
@@ -731,10 +877,16 @@ function sketch(p5) {
       );
   
       if (matchingItems.length === 0) continue;
-  
+      const eventKey = `${event.title}_${event.r}_${event.c}`;
+      if (!event.supabaseId) {
+        await startEventRecord(event, eventKey);
+      }
       bot.goal = event;
       bot.requested_item = matchingItems[0];
       event[needKey] = false;
+      // if (!event.supabaseId) {
+      //   startEventRecord(event, event.title + "_" + event.r + "_" + event.c);
+      // }
       break;
     }
   }
@@ -935,7 +1087,13 @@ export default function App() {
   const [emsStock, setEmsStock] = React.useState([]);
   const [maintanceStock, setMaintanceStock] = React.useState([]);
   forceUpdate = forceUpdateLocal;
-
+  useEffect(() => {
+    startGameSession();
+  
+    // Optionally end the session on window unload
+    window.addEventListener("beforeunload", endGameSession);
+    return () => window.removeEventListener("beforeunload", endGameSession);
+  }, []);
 
 
 
