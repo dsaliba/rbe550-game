@@ -17,7 +17,7 @@ const Stocks = {
         { value: 'defibrillator', label: 'Defibrillator' },
         { value: 'splint', label: 'Splint' },
         { value: 'epipen', label: 'EpiPen' },
-        { value: 'tourniquet', lable:'Tourniquet'}
+        { value: 'tourniquet', label:'Tourniquet'}
     ],
     main: [
         { value: 'breathing-apparatus', label: 'Breathing Apparatus' },
