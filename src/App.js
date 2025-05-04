@@ -20,6 +20,7 @@ let copBots = [];
 let fireBots = [];
 let emsBots = [];
 let mainBots = [];
+let gt = 0;
 // let reservationTable = new Map(); // reservation table for priority queue coordinate, timestamp
 let roads = [];
 let roadsByGrid;
@@ -177,31 +178,20 @@ function createRoad() {
     edges: [],
     tiles: [],
     color: getRandomVibrantColor(),
-    reservedTiles: new Map(), 
-    reservePath(path, priority) {
-      path.forEach(tile => {
-        const key = `${tile.r},${tile.c}`;
-        if (this.tiles.some(t => t.r === tile.r && t.c === tile.c)) {
-          const existingPriority = this.reservedTiles.get(key);
-          if (existingPriority === undefined || priority < existingPriority) {
-            this.reservedTiles.set(key, priority);
-          }
-        }
-      });
-    },
-    
-    releaseTile(tile) {
-      this.reservedTiles.delete(`${tile.r},${tile.c}`);
-    },
-    isTileReserved(tile, priority) {
-      const key = `${tile.r},${tile.c}`;
-      const reservedPriority = this.reservedTiles.get(key);
-      // Only block if another bot has a strictly higher priority
-      return reservedPriority !== undefined && reservedPriority < priority;
-    }
-    
-  };
+    reservations: []
+  }
 }
+
+function isTileReserved(r, c, t) {
+  let road = roadsByGrid[r][c];
+  road.reservations.forEach((res)=> {
+    if (res.start <= t && res.end >= t) {
+      return true;
+    }
+  })
+  return false;
+}
+
 function generateRoads() {
  
   console.log(freeTiles);
@@ -421,21 +411,34 @@ function sketch(p5) {
       }
     }
     reservePath(path) {
-      const priority = this.goal?.event?.priority ?? 999;  // fallback to low priority
-      path.forEach(tile => {
-        let road = roadsByGrid[tile.r]?.[tile.c];
-        if (road) {
-          road.reservePath([tile], priority);
+      let i = gt;
+      let lastRoad = undefined;
+      let start = 0;
+      let end = 0;
+      path.forEach((tile)=> {
+        i++;
+        if (lastRoad !== roadsByGrid[tile.r][tile.c]) {
+          if (lastRoad !== undefined) {
+            lastRoad.reservations.push({start: start, end: end, bot: this});
+            
+          }
+          start = i;
+          
         }
+        end=i;
+        lastRoad = roadsByGrid[tile.r][tile.c];
       });
     }
     
     releaseTile(tile) {
       let road = roadsByGrid[tile.r]?.[tile.c];
-      if (road) {
-        road.releaseTile(tile);
-      }
+      let cleaned = [];
+      road.reservations.forEach((res)=> {
+        if (res.bot !== this) cleaned.push(res);
+      }) 
+      road.reservations = cleaned;
     }
+
     releaseEntirePath() {
       if (!this.path) return;
       this.path.forEach(tile => this.releaseTile(tile));
@@ -487,13 +490,13 @@ function sketch(p5) {
         const myPriority = this.goal?.event?.priority ?? 999;
         for (let tile of this.path) {
           let road = roadsByGrid[tile.r]?.[tile.c];
-          if (road && road.isTileReserved(tile, myPriority)) {
-            // ✅ This means someone else with higher priority owns this tile
-            this.releaseEntirePath();
-            this.path = undefined;
-            this.pathIndex = undefined;
-            break;
-          }
+          // if (road && road.isTileReserved(tile, myPriority)) {
+          //   // This means someone else with higher priority owns this tile
+          //   this.releaseEntirePath();
+          //   this.path = undefined;
+          //   this.pathIndex = undefined;
+          //   break;
+          // }
         }
       }
                         
@@ -648,10 +651,10 @@ function sketch(p5) {
           }
   
           openSet.delete(this.hash(current));
-
-          for (let neighbor of this.getNeighbors(current)) {
-            const currentG = gScore.get(this.hash(current)) ?? Infinity;
-            const tentativeGScore = currentG + 1;
+          const currentG = gScore.get(this.hash(current)) ?? Infinity;
+          const tentativeGScore = currentG + 1;
+          for (let neighbor of this.getNeighbors(current, gt + tentativeGScore)) {
+            
 
             if (tentativeGScore < (gScore.get(this.hash(neighbor)) ?? Infinity)) {
               cameFrom.set(this.hash(neighbor), current);
@@ -686,7 +689,7 @@ function sketch(p5) {
       return Math.abs(a.r - b.r) + Math.abs(a.c - b.c);
   }
   
-  getNeighbors(tile) {
+  getNeighbors(tile, t) {
       let directions = [
           { r: -1, c: 0 }, { r: 1, c: 0 }, 
           { r: 0, c: -1 }, { r: 0, c: 1 }  
@@ -707,13 +710,13 @@ function sketch(p5) {
   // isWalkable(r, c) {
   //   return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length && grid[r][c] === 0;
   // }
-  isWalkable(r, c) {
+  isWalkable(r, c, t) {
     if (r < 0 || c < 0 || r >= grid.length || c >= grid[0].length) return false;
     if (grid[r][c] !== 0) return false;
   
     const road = roadsByGrid[r]?.[c];
     const priority = this.goal?.event?.priority ?? 999;
-    return !(road && road.isTileReserved({ r, c }, priority));
+    return !(road && isTileReserved(r, c, t));
   }
   
   
@@ -926,7 +929,8 @@ function sketch(p5) {
   p5.draw = () => {
     dispatch();
     timer ++;
-    if (timer % 20 === 0 ) {
+    if (timer % 5 === 0 ) {
+      gt++;
       robots.forEach((robot)=> {
         robot.update();
       })
@@ -959,9 +963,9 @@ function sketch(p5) {
     grid.forEach((row, r) => {
       row.forEach((type, c)=> {
         let road = roadsByGrid[r]?.[c];
-        if (road && road.isTileReserved({r, c})) {
-          p5.fill(0, 0, 255, 100); // Blue tint for reserved path
-        }
+        // if (road && road.isTileReserved({r, c})) {
+        //   p5.fill(0, 0, 255, 100); // Blue tint for reserved path
+        // }
         // p5.fill(grid[r][c]===1?255:0, 0, 0, grid[r][c]===1?50:0);
         if (grid[r][c] === 1) {
           p5.fill(255, 0, 0, 50); // wall
