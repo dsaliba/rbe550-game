@@ -4,10 +4,11 @@ import { ReactP5Wrapper } from "@p5-wrapper/react";
 import matrix from "./Matrix";
 import Select from 'react-select';
 import {Events, Stocks} from "./EventData"
-import { supabase } from './supabaseClient';
+import supabase from './supabase'
 import React, { useEffect, useReducer } from "react";
+import { useLocation } from 'react-router-dom';
 
-console.log("🧪 Supabase client:", supabase);
+//console.log("🧪 Supabase client:", supabase);
 let grid;
 let freeTiles = [];
 
@@ -26,97 +27,76 @@ let roads = [];
 let roadsByGrid;
 let sessionId;
 let sessionStartTime = Date.now();
+let mode = "road";
 let activeEvents = {}; // key: eventId or tile position
 const table_name = 'game_sessions'
 
 async function insertTestEventRecord() {    //this just inserts a test call to make sure the schema was good
-  const start = new Date();
-  const end = new Date(start.getTime() + 5000); 
-  const duration = end - start;
+  // const start = new Date();
+  // const end = new Date(start.getTime() + 5000); 
+  // const duration = end - start;
 
-  const { data, error } = await supabase
-    .from(table_name)
-    .insert([{
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-      duration_ms: duration,
-      event_type: "test_event",
-      success: true,
-    }])
-    .select();
+  // const { data, error } = await supabase
+  //   .from(table_name)
+  //   .insert([{
+  //     start_time: start.toISOString(),
+  //     end_time: end.toISOString(),
+  //     duration_ms: duration,
+  //     event_type: "test_event",
+  //     success: true,
+  //   }])
+  //   .select();
 
-  if (error) {
-    console.error("Failed to insert test event:", error);
-  } else {
-    console.log("Test event inserted:", data);
-  }
+  // if (error) {
+  //   console.error("Failed to insert test event:", error);
+  // } else {
+  //   //console.log("Test event inserted:", data);
+  // }
 }
 
 async function startGameSession() {  //starts a game session I am not to sure I actually need to call this because I store the uuid elsewhere
+  // const { data, error } = await supabase
+  //   .from('game_sessions')
+  //   .insert([{ start_time: new Date() }])
+  //   .select();
+
+  // if (error) {
+  //   console.error("Session start failed", error);
+  // } else {
+  //   sessionId = data[0].id;
+  //   sessionStartTime = Date.now();
+  //   //console.log("Game session started:", sessionId);
+  // }
   const { data, error } = await supabase
-    .from('game_sessions')
-    .insert([{ start_time: new Date() }])
-    .select();
-
-  if (error) {
-    console.error("Session start failed", error);
-  } else {
-    sessionId = data[0].id;
-    sessionStartTime = Date.now();
-    console.log("Game session started:", sessionId);
-  }
+  .from('Session')
+  .insert([
+    { mode: mode},
+  ])
+  .select()
+  sessionId = data[0].id;
+  console.log(sessionId);
 }
 
 
-async function startEventRecord(event, eventKey) { //This I think should be the main function but not usre how to get the timing calls right
-  const now = new Date();
-
+async function publishPath(length, score) {
   const { data, error } = await supabase
-    .from('game_sessions')
-    .insert([{
-      start_time: now,
-      event_type: event.title
-    }])
-    .select();
-
-  if (error) {
-    console.error("Event start failed", error);
-    return;
-  }
-
-  const eventId = data[0].id;
-  activeEvents[eventKey] = {
-    id: eventId,
-    startTime: now.getTime()
-  };
-
-  event.supabaseId = eventId;
-  event.startTimestamp = now.getTime();
+  .from('Paths')
+  .insert([
+    { session_id: sessionId, length: length, score:score, mode:mode},
+  ])
+  .select()
 }
 
-async function completeEvent(event, eventKey) { //call this after the the event is finished records the event type time to complete and its success bool
-  const active = activeEvents[eventKey];
-  if (!active) return;
-
-  const endTime = new Date();
-  const duration = endTime.getTime() - active.startTime;
-
-  const { error } = await supabase
-    .from('game_sessions')
-    .update({
-      end_time: endTime,
-      duration_ms: duration,
-      success: event.requiredStock.length === event.providedStock.length
-    })
-    .eq('id', active.id);
-
-  if (error) {
-    console.error("Event completion failed", error);
-  } else {
-    console.log("Event completed:", active.id);
-    delete activeEvents[eventKey];
-  }
+async function publishEvent(success, duration) {
+  const { data, error } = await supabase
+  .from('Events')
+  .insert([
+    { session_id: sessionId, success: success, duration:duration, mode:mode},
+  ])
+  .select()
 }
+
+
 
 async function endGameSession() {
   const endTime = new Date();
@@ -184,17 +164,19 @@ function createRoad() {
 
 function isTileReserved(r, c, t) {
   let road = roadsByGrid[r][c];
+  let flag = false;
   road.reservations.forEach((res)=> {
     if (res.start <= t && res.end >= t) {
-      return true;
+      flag = true;
+      return;
     }
   })
-  return false;
+  return flag;
 }
 
 function generateRoads() {
  
-  console.log(freeTiles);
+  //console.log(freeTiles);
   let mask = [];
   freeTiles.forEach((tile)=>{
     mask.push(true);
@@ -277,7 +259,7 @@ function generateRoads() {
         })
         roads.push(road);
       }else {
-        console.log("Malformed road tile");
+        //console.log("Malformed road tile");
       }
      
     }
@@ -285,7 +267,7 @@ function generateRoads() {
 
   freeTiles.forEach((tile, index) => {
     if (mask[index] && tile.r > 0 && tile.c > 0 && tile.r < grid.length-1 && tile.c < grid[0].length-1 ) {
-      //console.log(tile)
+      ////console.log(tile)
       let orthos = [{r: tile.r-1, c: tile.c}, {r: tile.r+1, c: tile.c}, {r: tile.r, c: tile.c-1}, {r: tile.r, c: tile.c-1}]
       let edges = [];
       // let road = {tiles:[tile],edges: edges, color: getRandomVibrantColor()};
@@ -303,7 +285,7 @@ function generateRoads() {
       roadsByGrid[tile.r][tile.c] = road;
     }
   });
-  //console.log(roads)
+  ////console.log(roads)
   freeTiles.forEach((tile)=> {
     grid[tile.r][tile.c] = 0;
   })
@@ -364,7 +346,7 @@ function sketch(p5) {
     warehouse_location.fire = getRandomBoringTile()
     warehouse_location.main = getRandomBoringTile()
     generateRoads();
-    console.log("sajdlf");
+    //console.log("sajdlf");
   }
 
   p5.setup = () => {
@@ -375,8 +357,8 @@ function sketch(p5) {
     cols = Math.floor(imgSize.h/tileSize);
     //grid = Array.from(Array(rows), () => new Array(cols).fill(1));
     
-    console.log(p5);
-    console.log(grid);
+    //console.log(p5);
+    //console.log(grid);
     setTimeout(spawnRandomEvent, 2000);
   };
 
@@ -409,17 +391,41 @@ function sketch(p5) {
                 mainBots.push(this)
                 break;
       }
+      switch (this.type) {
+        case 'cop':
+          this.baseColor = [42, 195, 222];
+          break;
+        case 'fire':
+          this.baseColor = [247, 118, 142];
+          break;
+        case 'ems':
+          this.baseColor = [187, 154, 247];
+          break;
+        case 'main':
+          this.baseColor = [224, 175, 104];
+          break;
+        default:
+          this.baseColor = [200, 200, 200];
+      }
+      
     }
     reservePath(path) {
       let i = gt;
       let lastRoad = undefined;
       let start = 0;
       let end = 0;
-      path.forEach((tile)=> {
+      path.forEach((tile, index)=> {
         i++;
-        if (lastRoad !== roadsByGrid[tile.r][tile.c]) {
+        if (lastRoad !== roadsByGrid[tile.r][tile.c] || index === path.length-1) {
           if (lastRoad !== undefined) {
-            lastRoad.reservations.push({start: start, end: end, bot: this});
+            if (mode === 'road') {
+              lastRoad.reservations.push({start: start, end: end, bot: this});
+              //console.log(lastRoad)
+            } else {
+              lastRoad.reservations.push({start: gt, end: gt+path.length, bot: this})
+              //lastRoad.reservations.push({start: gt, end: 9999999, bot: this})
+              //console.log(lastRoad)
+            }
             
           }
           start = i;
@@ -430,20 +436,20 @@ function sketch(p5) {
       });
     }
     
-    releaseTile(tile) {
-      return;
-      let road = roadsByGrid[tile.r]?.[tile.c];
-      let cleaned = [];
-      road.reservations.forEach((res)=> {
-        if (res.bot !== this) cleaned.push(res);
-      }) 
-      road.reservations = cleaned;
-    }
+    // releaseTile(tile) {
+    //   return;
+    //   let road = roadsByGrid[tile.r]?.[tile.c];
+    //   let cleaned = [];
+    //   road.reservations.forEach((res)=> {
+    //     if (res.bot !== this) cleaned.push(res);
+    //   }) 
+    //   road.reservations = cleaned;
+    // }
 
-    releaseEntirePath() {
-      if (!this.path) return;
-      this.path.forEach(tile => this.releaseTile(tile));
-    }
+    // releaseEntirePath() {
+    //   if (!this.path) return;
+    //   this.path.forEach(tile => this.releaseTile(tile));
+    // }
     // navigateToTarget(target, onArrival) {
       
     //   if (!this.path) {
@@ -477,11 +483,11 @@ function sketch(p5) {
     //     onArrival();
     //   }
     // }
-    safeReleaseCurrentTile() {
-      if (this.path && this.pathIndex !== undefined && this.path[this.pathIndex]) {
-        this.releaseTile(this.path[this.pathIndex]);
-      }
-    }
+    // safeReleaseCurrentTile() {
+    //   if (this.path && this.pathIndex !== undefined && this.path[this.pathIndex]) {
+    //     this.releaseTile(this.path[this.pathIndex]);
+    //   }
+    // }
     update() {
       if (!this.goal) return;
     
@@ -512,6 +518,7 @@ function sketch(p5) {
           if (this.failedPathCounter % 5 === 0) { // Try every 5 updates
             const path = this.aStar(start, target);
             if (path && path.length > 0) {
+              publishPath(path.length, path.length/(Math.abs(target.r-start.r)+ Math.abs(target.c-start.c)))
               this.path = path;
               this.pathIndex = 0;
               this.reservePath(path);
@@ -523,8 +530,8 @@ function sketch(p5) {
         }
         
         if (this.pathIndex < this.path.length - 1) {
-          const prevTile = this.path[this.pathIndex];   // <- Add this
-          this.releaseTile(prevTile);                   // <- And this
+          // const prevTile = this.path[this.pathIndex];   // <- Add this
+          // this.releaseTile(prevTile);                   // <- And this
         
           this.pathIndex++;
           this.tile = this.path[this.pathIndex];
@@ -532,11 +539,11 @@ function sketch(p5) {
         
     
         if (this.pathIndex >= this.path.length - 1 || atWarehouse) {
-          console.log("Reached warehouse");
+          //console.log("Reached warehouse");
           this.stock.push(this.requested_item);
-          this.safeReleaseCurrentTile();
+          //this.safeReleaseCurrentTile();
           this.requested_item = null;
-          this.releaseEntirePath();
+          //this.releaseEntirePath();
           this.path = undefined;
           this.pathIndex = undefined;
           this.intermediateTargetReached = true;
@@ -577,8 +584,8 @@ function sketch(p5) {
     
       if (this.pathIndex >= this.path.length - 1) {
         this.resolveConflict();
-        this.safeReleaseCurrentTile();
-        this.releaseEntirePath();
+        //this.safeReleaseCurrentTile();
+        //this.releaseEntirePath();
         this.goal = undefined;
         this.path = undefined;
         this.pathIndex = undefined;
@@ -589,8 +596,8 @@ function sketch(p5) {
     
   
     has_stock(desired) {
-      // console.log("stock currently " + this.stock)
-      // console.log("Do we have what we need " + this.stock.includes(desired))
+      // //console.log("stock currently " + this.stock)
+      // //console.log("Do we have what we need " + this.stock.includes(desired))
       return this.stock.includes(desired);
     }
     resolveConflict() {
@@ -599,22 +606,25 @@ function sketch(p5) {
           this.goal.providedStock.push(item);
         }
       });
-      // console.log(this.goal.outstandingBots);
+      // //console.log(this.goal.outstandingBots);
 
       this.goal.outstandingBots--;
       if (this.goal.outstandingBots < 1) {
         // completeEventRecord(this.goal.event)
-        if (this.goal.event.requiredStock.length === this.goal.providedStock.length) {
-          // console.log(this.goal.event.requiredStock);
-          // console.log(this.goal.providedStock);
+        let success = this.goal.event.requiredStock.length === this.goal.providedStock.length;
+        let duration = gt-this.goal.event.startTime;
+        publishEvent(success, duration);
+        if (success) {
+          // //console.log(this.goal.event.requiredStock);
+          // //console.log(this.goal.providedStock);
           alert("Resolved");
         } else {
           alert("Failed!")
-          console.log("Required:", this.goal.event.requiredStock);
-          console.log("Provided:", this.goal.providedStock);
+          //console.log("Required:", this.goal.event.requiredStock);
+          //console.log("Provided:", this.goal.providedStock);
         }
         const eventKey = `${this.goal.event.title}_${this.goal.event.r}_${this.goal.event.c}`;
-        completeEvent(this.goal.event, eventKey);
+        
         let eventIndex = 0;
         let addressedEventIndex = 0;
         events.forEach((v, i)=>{if (v===this.goal.event){eventIndex = i; return;}})
@@ -626,7 +636,7 @@ function sketch(p5) {
     }
     
     aStar(start, goal) {
-      // console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
+      // //console.log("Started A* with "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
       let openSet = new Set();
       let cameFrom = new Map();
       let gScore = new Map();
@@ -643,17 +653,18 @@ function sketch(p5) {
         }
        
           let current = this.getLowestFScore(openSet, fScore);
-          // console.log(current);
+          // //console.log(current);
   
           if (current.r === goal.r && current.c === goal.c) {
-            // console.log("We found a path for "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
-            // console.log("Path found is " + this.reconstructPath(cameFrom, goal, start))
+            // //console.log("We found a path for "+ `Target (${this.target.r}, ${this.target.c}) current tile (${this.tile.r}, ${this.tile.c})`)
+            // //console.log("Path found is " + this.reconstructPath(cameFrom, goal, start))
               return this.reconstructPath(cameFrom, goal, start);
           }
   
           openSet.delete(this.hash(current));
           const currentG = gScore.get(this.hash(current)) ?? Infinity;
           const tentativeGScore = currentG + 1;
+          
           for (let neighbor of this.getNeighbors(current, gt + tentativeGScore)) {
             
 
@@ -666,7 +677,7 @@ function sketch(p5) {
             }
           }
       }
-      console.log("no path")
+      //console.log("no path")
       return []; // No path found
   }
   
@@ -700,7 +711,7 @@ function sketch(p5) {
       for (let dir of directions) {
           let nr = tile.r + dir.r;
           let nc = tile.c + dir.c;
-          if (this.isWalkable(nr, nc)) {
+          if (this.isWalkable(nr, nc, t)) {
               neighbors.push({ r: nr, c: nc });
           }
       }
@@ -717,7 +728,8 @@ function sketch(p5) {
   
     const road = roadsByGrid[r]?.[c];
     const priority = this.goal?.event?.priority ?? 999;
-    return !(road && isTileReserved(r, c, t));
+    
+    return !isTileReserved(r, c, t);
   }
   
   
@@ -726,8 +738,8 @@ function sketch(p5) {
       let path = [];
       let current = goal;
       let counter = 0;
-      // console.log(start);
-      // console.log(current);
+      // //console.log(start);
+      // //console.log(current);
       while (cameFrom.has(this.hash(current)) && (!(current.r ===start.r && current.c===start.c))) {
         counter ++;
         if (counter > 10000){
@@ -736,7 +748,7 @@ function sketch(p5) {
           path.unshift(current);
           current = cameFrom.get(this.hash(current));
       }
-      // console.log(path);
+      // //console.log(path);
       path.unshift(start)
       return path;
   }
@@ -755,33 +767,27 @@ function sketch(p5) {
     draw() {
       
       //TEMP
-      let roads = [];
-      if (this.path !== undefined && this.path.length > 0) {
-        this.path.forEach((tile)=>{
-          if (!roads.includes(roadsByGrid[tile.c][tile.c])) {
-            roads.push(roadsByGrid[tile.r][tile.c]);
-          }
-        }) 
-
-      }
+      
       p5.strokeWeight(2);
-      console.log(roads);
+      //console.log(roads);
       roads.forEach((road)=> {
         let flag = false;
-        
+        let color = undefined;
         road.reservations.forEach((res)=> {
           if (res.start <= gt && res.end >= gt) {
             flag = true;
+            //console.log(res);
+            color = res.bot.baseColor;
           }
         });
         if (flag){
-          p5.stroke(road.color.r, road.color.g, road.color.b);
+          p5.stroke(color);
         let start = road.tiles[0];
         let end = road.tiles[road.tiles.length-1];
         if (road.tiles.length > 1) {
           p5.line(start.r*tileSize + tileSize/2 - p5.width/2, start.c*tileSize + tileSize/2 - p5.height/2, end.r*tileSize + tileSize/2 - p5.width/2, end.c*tileSize + tileSize/2 - p5.height/2);
         } else {
-          p5.fill(road.color.r, road.color.g, road.color.b);
+          p5.fill(color);
           p5.rectMode(p5.CENTER);
           p5.rect(start.r*tileSize + tileSize/2 - p5.width/2, start.c*tileSize + tileSize/2 - p5.height/2, 8, 8);
         }
@@ -791,29 +797,13 @@ function sketch(p5) {
 
       const isActive = this.goal !== undefined;
       const isFlashing = isActive && timer % 30 < 15;
-      let baseColor;
-      switch (this.type) {
-        case 'cop':
-          baseColor = [42, 195, 222];
-          break;
-        case 'fire':
-          baseColor = [247, 118, 142];
-          break;
-        case 'ems':
-          baseColor = [187, 154, 247];
-          break;
-        case 'main':
-          baseColor = [224, 175, 104];
-          break;
-        default:
-          baseColor = [200, 200, 200];
-      }
+      //come back here
     
       // Flash between red and base color if dispatched
       if (isFlashing) {
         p5.fill(255, 255, 255); // red
       } else {
-        p5.fill(...baseColor);
+        p5.fill(...this.baseColor);
       }
     
       p5.stroke(0);
@@ -857,7 +847,8 @@ function sketch(p5) {
         requiredStock: event.requiredStock,
         suppliedStock: [],
         image: event.image , 
-        priority: event.priority
+        priority: event.priority,
+        startTime: gt
       })
     }
     setTimeout(spawnRandomEvent, 10000 + Math.random()*5000);
@@ -894,7 +885,7 @@ function sketch(p5) {
       if (matchingItems.length === 0) continue;
       const eventKey = `${event.title}_${event.r}_${event.c}`;
       if (!event.supabaseId) {
-        await startEventRecord(event, eventKey);
+        //startEventRecord(event, eventKey);
       }
       bot.goal = event;
       bot.requested_item = matchingItems[0];
@@ -1031,7 +1022,7 @@ function sketch(p5) {
   };
 
   p5.mouseClicked = () => {
-    // console.log('Mouse clicked at:', p5.mouseX, p5.mouseY);
+    // //console.log('Mouse clicked at:', p5.mouseX, p5.mouseY);
     let x = p5.mouseX ;
     let y = p5.mouseY;
     events.forEach((event)=> {
@@ -1040,7 +1031,7 @@ function sketch(p5) {
       if (((ex-x)*(ex-x))+((ey-y)*(ey-y)) < tileSize*tileSize) {
         currentEvent = event;
         eventImage = currentEvent.image
-        // console.log("path to image:", eventImage)
+        // //console.log("path to image:", eventImage)
         events.forEach((event) => {
 
         });
@@ -1093,7 +1084,7 @@ function printMatrixAsDeclaration(matrix) {
   }
 
   output += "\n];";
-  // console.log(output);
+  // //console.log(output);
 }
 
 export default function App() {
@@ -1102,15 +1093,26 @@ export default function App() {
   const [fireStock, setFireStock] = React.useState([]);
   const [emsStock, setEmsStock] = React.useState([]);
   const [maintanceStock, setMaintanceStock] = React.useState([]);
+  const location = useLocation();
+  
   forceUpdate = forceUpdateLocal;
   useEffect(() => {
-    startGameSession();
+    
   
     // Optionally end the session on window unload
     window.addEventListener("beforeunload", endGameSession);
     return () => window.removeEventListener("beforeunload", endGameSession);
   }, []);
 
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+
+  const nmode = searchParams.get('mode');
+  if (nmode === 'path') {
+    mode = 'path';
+  }
+  startGameSession();
+  }, [location.search]);
 
 
   return <div className="outer-box">
@@ -1120,7 +1122,7 @@ export default function App() {
       </div>
       <div className="side-panel">
         {currentEvent===undefined?"":((()=>{
-          // console.log("current event", currentEvent.image);
+          // //console.log("current event", currentEvent.image);
           return <div className="event">
               <h1 className="event-title">{currentEvent.title}</h1>
               {currentEvent.image && (
@@ -1136,7 +1138,7 @@ export default function App() {
                 <div className="cop-options" >
                   <h1 className="cop-title">Police Items</h1>
                   <Select options={Stocks.cop} className="selector" isMulti onChange={(values)=> {
-                // console.log(values);
+                // //console.log(values);
                 setCopStock(values);
               }}/>
                 </div>
@@ -1144,7 +1146,7 @@ export default function App() {
                 <div className="fire-options">
                   <h1 className="fire-title">Firefighter Items</h1>
                   <Select options={Stocks.fire} className="selector" isMulti onChange={(values)=> {
-                // console.log(values);
+                // //console.log(values);
                 setFireStock(values);
               }}/>
                 </div>
@@ -1152,7 +1154,7 @@ export default function App() {
                 <div className="ems-options">
                   <h1 className="ems-title">EMS Items</h1>
                   <Select options={Stocks.ems} className="selector" isMulti onChange={(values)=> {
-                // console.log(values);
+                // //console.log(values);
                 setEmsStock(values);
               }}/>
                 </div>
@@ -1160,7 +1162,7 @@ export default function App() {
                 <div className="main-options">
                   <h1 className="main-title">Maintance Items</h1>
                   <Select options={Stocks.main} className="selector" isMulti onChange={(values)=> {
-                // console.log(values);
+                // //console.log(values);
                 setMaintanceStock(values);
               }}/>
                 </div>

@@ -141,3 +141,7 @@ html, body, #app, #root,  #app>div {
   height: auto;
   margin: 10px 0;
 }
+
+h1 {
+  margin: 4px !important
+}
