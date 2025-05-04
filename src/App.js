@@ -516,7 +516,7 @@ function sketch(p5) {
         if (!this.path) {
           this.failedPathCounter++;
         
-          if (this.failedPathCounter % 5 === 0) { // Try every 5 updates
+          if (this.failedPathCounter % 3 === 0) { // Try every 5 updates
             const path = this.aStar(start, target);
             if (path && path.length > 0) {
               publishPath(path.length, path.length/(Math.abs(target.r-start.r)+ Math.abs(target.c-start.c)))
