@@ -24,7 +24,7 @@ html, body, #app, #root,  #app>div {
   justify-content: center;
   align-items: center;
   display: flex;
-  
+  flex-direction: column;
   
 }
 
@@ -37,6 +37,25 @@ html, body, #app, #root,  #app>div {
   border: #7aa2f7;
   border-width: 5px;
   border-style: double;
+}
+
+.score-box {
+  width: 400px;
+  height: 200;
+  display: flex;
+  top: 50%;
+  border: #7aa2f7;
+  border: #7aa2f7;
+  border-width: 5px;
+  border-style: double;
+  margin-bottom: 40px;
+  display: flex;
+}
+
+.score {
+  font-size: 50px;
+  text-align:center;
+  width: 100%;
 }
 
 .sketch-box {

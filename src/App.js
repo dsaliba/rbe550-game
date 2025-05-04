@@ -11,7 +11,8 @@ import { useLocation } from 'react-router-dom';
 //console.log("🧪 Supabase client:", supabase);
 let grid;
 let freeTiles = [];
-
+let right = 0;
+let total = 0;
 let currentEvent = undefined;
 let forceUpdate = ()=>undefined;
 let events = [];
@@ -617,12 +618,13 @@ function sketch(p5) {
         if (success) {
           // //console.log(this.goal.event.requiredStock);
           // //console.log(this.goal.providedStock);
-          alert("Resolved");
+          right++;
         } else {
-          alert("Failed!")
           //console.log("Required:", this.goal.event.requiredStock);
           //console.log("Provided:", this.goal.providedStock);
         }
+        total++;
+        forceUpdate();
         const eventKey = `${this.goal.event.title}_${this.goal.event.r}_${this.goal.event.c}`;
         
         let eventIndex = 0;
@@ -851,7 +853,7 @@ function sketch(p5) {
         startTime: gt
       })
     }
-    setTimeout(spawnRandomEvent, 10000 + Math.random()*5000);
+    setTimeout(spawnRandomEvent, 4000 + Math.random()*4000);
   }
 
   function dispatch() {
@@ -1062,7 +1064,7 @@ function sketch(p5) {
 
 
   
-
+ 
 
 }
 
@@ -1116,6 +1118,9 @@ export default function App() {
 
 
   return <div className="outer-box">
+    <div className="score-box">
+      <h1 className="score">{right+"/"+total}</h1>
+    </div>
     <div className="game-box">
       <div className="sketch-box">
       <ReactP5Wrapper sketch={sketch} />
