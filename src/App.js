@@ -431,6 +431,7 @@ function sketch(p5) {
     }
     
     releaseTile(tile) {
+      return;
       let road = roadsByGrid[tile.r]?.[tile.c];
       let cleaned = [];
       road.reservations.forEach((res)=> {
@@ -568,7 +569,7 @@ function sketch(p5) {
     
       if (this.pathIndex < this.path.length - 1) {
         const prevTile = this.path[this.pathIndex];  // Save tile before moving
-        this.releaseTile(prevTile);                  // Release it
+       // this.releaseTile(prevTile);                  // Release it
 
         this.pathIndex++;
         this.tile = this.path[this.pathIndex];       // Step to next tile
@@ -764,8 +765,17 @@ function sketch(p5) {
 
       }
       p5.strokeWeight(2);
+      console.log(roads);
       roads.forEach((road)=> {
-        p5.stroke(road.color.r, road.color.g, road.color.b);
+        let flag = false;
+        
+        road.reservations.forEach((res)=> {
+          if (res.start <= gt && res.end >= gt) {
+            flag = true;
+          }
+        });
+        if (flag){
+          p5.stroke(road.color.r, road.color.g, road.color.b);
         let start = road.tiles[0];
         let end = road.tiles[road.tiles.length-1];
         if (road.tiles.length > 1) {
@@ -775,6 +785,8 @@ function sketch(p5) {
           p5.rectMode(p5.CENTER);
           p5.rect(start.r*tileSize + tileSize/2 - p5.width/2, start.c*tileSize + tileSize/2 - p5.height/2, 8, 8);
         }
+        }
+        
       });
 
       const isActive = this.goal !== undefined;
